@@ -56,7 +56,7 @@ export function CascadePanel() {
       <div class="absolute top-3 end-3 z-30">
         <Show when={open()} fallback={
           <button type="button" class="h-9 px-3 rounded-md border border-border-base bg-background-stronger text-12-medium text-text-base shadow-lg flex items-center gap-2" onClick={() => setOpen(true)} title="Show Cascade agent team">
-            <Icon name="sparkles" size="14" />
+            <Icon name="models" size="14" />
             Agents <span class="text-text-weak">{graph()!.tasks.length}</span>
           </button>
         }>
