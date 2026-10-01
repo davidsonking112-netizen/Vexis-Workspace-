@@ -3,6 +3,7 @@ import { PromptInput } from "@vexis/schema/prompt-input"
 import * as Session from "../session"
 import { Location } from "../location"
 import { Cascade, type Plan, type Task, type ProjectResult } from "../cascade"
+import * as CapabilityRegistry from "./capability"
 
 /**
  * Connects Cascade's dependency graph to real Vexis sessions.
@@ -91,5 +92,5 @@ export const run = (input: RunInput): Effect.Effect<ProjectResult, unknown, Sess
       })),
     }
 
-    return yield* Cascade.run(plan, { concurrency: input.concurrency })
+    return yield* Cascade.run(plan, { concurrency: input.concurrency, capabilities: CapabilityRegistry.capabilities() })
   })
