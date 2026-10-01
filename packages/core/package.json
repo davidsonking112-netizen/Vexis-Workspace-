@@ -20,7 +20,8 @@
     "./cascade": "./src/cascade.ts",
     "./cascade/planner": "./src/cascade/planner.ts",
     "./cascade/capability": "./src/cascade/capability.ts",
-    "./*": "./src/*.ts"
+    "./*": "./src/*.ts",
+    "./project/memory": "./src/project/memory.ts"
   },
   "imports": {
     "#sqlite": {
