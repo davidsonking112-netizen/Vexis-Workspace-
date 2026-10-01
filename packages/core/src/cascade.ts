@@ -35,6 +35,15 @@ export type Task = {
 
 export type TaskState = "pending" | "running" | "completed" | "failed" | "cancelled"
 
+export type Event =
+  | { readonly type: "cascade.started"; readonly taskCount: number }
+  | { readonly type: "cascade.task.started"; readonly taskID: TaskID }
+  | { readonly type: "cascade.task.completed"; readonly taskID: TaskID; readonly artifactCount: number }
+  | { readonly type: "cascade.task.failed"; readonly taskID: TaskID; readonly error: unknown }
+  | { readonly type: "cascade.task.cancelled"; readonly taskID: TaskID; readonly reason: string }
+  | { readonly type: "cascade.completed"; readonly results: ReadonlyMap<TaskID, TaskResult> }
+
+
 export type TaskResult = {
   readonly id: TaskID
   readonly state: TaskState
@@ -55,6 +64,7 @@ export type Plan = {
 export type Options = {
   readonly concurrency?: number
   readonly capabilities?: readonly Capability[]
+  readonly onEvent?: (event: Event) => Effect.Effect<void, never>
 }
 
 /**
@@ -92,6 +102,9 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
 
     const results = new Map<TaskID, TaskResult>()
     const artifacts = new Map<string, unknown>()
+    const emit = (event: Event) => options.onEvent ? options.onEvent(event) : Effect.void
+
+    yield* emit({ type: "cascade.started", taskCount: tasks.size })
 
     const hasCycle = () => {
       const visiting = new Set<TaskID>()
@@ -127,12 +140,9 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
       })
 
       for (const task of blocked) {
-        results.set(task.id, {
-          id: task.id,
-          state: "cancelled",
-          artifacts: [],
-          error: new Error(`Dependency failed for Cascade task ${task.id}`),
-        })
+        const error = new Error(`Dependency failed for Cascade task ${task.id}`)
+        results.set(task.id, { id: task.id, state: "cancelled", artifacts: [], error })
+        yield* emit({ type: "cascade.task.cancelled", taskID: task.id, reason: error.message })
       }
 
       if (ready.length === 0) {
@@ -145,6 +155,7 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
       const wave = ready.slice(0, concurrency)
       for (const task of wave) {
         results.set(task.id, { id: task.id, state: "running", artifacts: [] })
+        yield* emit({ type: "cascade.task.started", taskID: task.id })
       }
 
       const completed = yield* Effect.forEach(
@@ -183,10 +194,16 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
       for (const result of completed) {
         results.set(result.id, result)
         if (result.state === "completed") {
+          yield* emit({ type: "cascade.task.completed", taskID: result.id, artifactCount: result.artifacts.length })
+        } else if (result.state === "failed") {
+          yield* emit({ type: "cascade.task.failed", taskID: result.id, error: result.error })
+        }
+        if (result.state === "completed") {
           for (const artifact of result.artifacts) artifacts.set(artifact.key, artifact.value)
         }
       }
     }
 
+    yield* emit({ type: "cascade.completed", results })
     return { results, artifacts }
   })
