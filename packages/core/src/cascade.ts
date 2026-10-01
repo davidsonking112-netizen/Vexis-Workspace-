@@ -1,4 +1,5 @@
 export * as Cascade from "./cascade"
+export * as CascadeSession from "./cascade/session"
 
 import { Effect } from "effect"
 
