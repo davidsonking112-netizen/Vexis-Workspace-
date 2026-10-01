@@ -7,7 +7,7 @@ import { Global } from "../global"
 import { FSUtil } from "../fs-util"
 import { Git } from "../git"
 import { Cascade, type Plan, type Task, type ProjectResult, type Artifact } from "../cascade"
-import * as CapabilityRegistry from "./capability"\nimport { AbsolutePath } from "../schema"
+import * as CapabilityRegistry from "./capability"\nimport { AbsolutePath } from "../schema"\nimport { ProjectMemory } from "../project/memory"
 
 export type RunInput = {
   readonly location: Location.Ref
@@ -18,7 +18,7 @@ export type RunInput = {
   readonly onEvent?: (event: Cascade.Event) => Effect.Effect<void, never>
 }
 
-const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>) => {
+const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>, memory: string) => {
   const dependencyContext = [...context.entries()]
     .map(([key, value]) => `\nArtifact ${key}:\n${typeof value === "string" ? value : JSON.stringify(value)}`)
     .join("")
