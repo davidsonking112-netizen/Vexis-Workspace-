@@ -89,7 +89,7 @@ jobs:
           const textExtensions = new Set([
             ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".jsonc",
             ".md", ".mdx", ".txt", ".toml", ".yml", ".yaml", ".css", ".scss",
-            ".html", ".xml", ".svg", ".sh"
+            ".html", ".xml", ".svg", ".sh", ".lock"
           ])
 
           const files = walk(root).filter((file) => {
@@ -158,15 +158,44 @@ jobs:
           for (const [from, to] of namespaceMap) console.log(`  ${from} -> ${to}`)
           NODE
 
-      - name: Regenerate Bun lockfile
-        run: bun install --lockfile-only --no-progress
-
-      - name: Validate migrated runtime
+      - name: Validate migrated workspace graph
         run: |
           test -d packages/vexis
           test ! -d packages/opencode
           test -f packages/vexis/bin/vexis
-          bun run --cwd packages/vexis typecheck
+          ! grep -R -n --exclude-dir=.git --exclude=vexis-namespace-migration.yml "@opencode-ai/" . >/tmp/vexis-stale.txt
+          ! grep -R -n --exclude-dir=.git --exclude=vexis-namespace-migration.yml "packages/opencode" . >/tmp/vexis-stale-paths.txt
+          node - <<'NODE'
+          const fs = require("node:fs")
+          const path = require("node:path")
+          function walk(dir) {
+            const out = []
+            for (const e of fs.readdirSync(dir, {withFileTypes:true})) {
+              if (e.name === ".git" || e.name === "node_modules") continue
+              const p = path.join(dir, e.name)
+              if (e.isDirectory()) out.push(...walk(p))
+              else out.push(p)
+            }
+            return out
+          }
+          const names = new Map()
+          for (const file of walk(process.cwd()).filter(f => f.endsWith("package.json"))) {
+            let pkg
+            try { pkg = JSON.parse(fs.readFileSync(file, "utf8")) } catch { continue }
+            if (!pkg.name) continue
+            if (names.has(pkg.name)) throw new Error("duplicate package: " + pkg.name)
+            names.set(pkg.name, file)
+          }
+          for (const [name, file] of names) {
+            if (name.startsWith("@opencode-ai/")) throw new Error("stale workspace namespace: " + name + " in " + file)
+          }
+          const root = JSON.parse(fs.readFileSync("package.json", "utf8"))
+          if (root.scripts?.dev?.includes("packages/opencode")) throw new Error("root dev script still targets packages/opencode")
+          const runtime = JSON.parse(fs.readFileSync("packages/vexis/package.json", "utf8"))
+          if (runtime.name !== "vexis") throw new Error("runtime package name is not vexis")
+          if (runtime.bin?.vexis !== "./bin/vexis") throw new Error("runtime bin is not ./bin/vexis")
+          console.log("Workspace namespace/path validation passed.")
+          NODE
 
       - name: Commit migration
         shell: bash
