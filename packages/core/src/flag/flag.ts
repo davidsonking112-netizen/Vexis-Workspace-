@@ -5,14 +5,18 @@ export function truthy(key: string) {
   return value === "true" || value === "1"
 }
 
-const copy = process.env["OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"]
-const fff = process.env["OPENCODE_DISABLE_FFF"]
+const copy = process.env["VEXIS_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"] ?? process.env["OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"]
+const fff = process.env["VEXIS_DISABLE_FFF"] ?? process.env["OPENCODE_DISABLE_FFF"]
 
-function enabledByExperimental(key: string) {
-  return process.env[key] === undefined ? truthy("OPENCODE_EXPERIMENTAL") : truthy(key)
+function enabledByExperimental(key: string, legacyKey?: string) {
+  return process.env[key] === undefined ? (legacyKey ? process.env[legacyKey] === undefined ? truthy("VEXIS_EXPERIMENTAL") || truthy("OPENCODE_EXPERIMENTAL") : truthy(legacyKey) : truthy("VEXIS_EXPERIMENTAL") || truthy("OPENCODE_EXPERIMENTAL")) : truthy(key)
 }
 
 export const Flag = {
+  // Vexis-native environment variables. Legacy OPENCODE_* variables remain readable for migration compatibility.
+  VEXIS_CONFIG_DIR: process.env["VEXIS_CONFIG_DIR"],
+  VEXIS_DB: process.env["VEXIS_DB"] ?? process.env["OPENCODE_DB"],
+  VEXIS_WORKSPACE_ID: process.env["VEXIS_WORKSPACE_ID"] ?? process.env["OPENCODE_WORKSPACE_ID"],
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
   OTEL_EXPORTER_OTLP_HEADERS: process.env["OTEL_EXPORTER_OTLP_HEADERS"],
 
@@ -62,6 +66,18 @@ export const Flag = {
   },
   get OPENCODE_CONFIG_DIR() {
     return process.env["OPENCODE_CONFIG_DIR"]
+  },
+  get VEXIS_DISABLE_PROJECT_CONFIG() {
+    return truthy("VEXIS_DISABLE_PROJECT_CONFIG") || truthy("OPENCODE_DISABLE_PROJECT_CONFIG")
+  },
+  get VEXIS_PURE() {
+    return truthy("VEXIS_PURE") || truthy("OPENCODE_PURE")
+  },
+  get VEXIS_CLIENT() {
+    return process.env["VEXIS_CLIENT"] ?? process.env["OPENCODE_CLIENT"] ?? "cli"
+  },
+  get VEXIS_CONFIG_DIR() {
+    return process.env["VEXIS_CONFIG_DIR"]
   },
   get OPENCODE_PURE() {
     return truthy("OPENCODE_PURE")
