@@ -124,7 +124,7 @@ async function toolError(part: ToolPart) {
 }
 
 export const RunCommand = effectCmd({
-  command: "run [message..]",
+  command: ["run [message..]", "mission [message..]"],
   describe: "run opencode with a message",
   // --attach connects to a remote server (no local instance needed); the
   // default path runs an in-process server and needs the project instance.
@@ -269,7 +269,7 @@ export const RunCommand = effectCmd({
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
     yield* Effect.promise(async () => {
-      const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
+      const missionMode = args._?.[0] === "mission"\n      const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
       const interactive = args.mini
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
