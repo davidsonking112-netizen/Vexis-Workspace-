@@ -5,8 +5,15 @@ import { useServerSync } from "@/context/server-sync"
 
 type CascadeMetadata = {
   taskID?: string
+  role?: string
   dependsOn?: string[]
   parentSessionID?: string
+  git?: {
+    isolated?: boolean
+    head?: string
+    branch?: string
+    dirtyBase?: boolean
+  }
 }
 
 function cascadeMetadata(value: unknown): CascadeMetadata | undefined {
@@ -47,32 +54,19 @@ export function CascadePanel() {
   return (
     <Show when={graph()?.tasks.length}>
       <div class="absolute top-3 end-3 z-30">
-        <Show
-          when={open()}
-          fallback={
-            <button
-              type="button"
-              class="h-9 px-3 rounded-md border border-border-base bg-background-stronger text-12-medium text-text-base shadow-lg flex items-center gap-2"
-              onClick={() => setOpen(true)}
-              title="Show Cascade agent team"
-            >
-              <Icon name="sparkles" size="14" />
-              Agents <span class="text-text-weak">{graph()!.tasks.length}</span>
-            </button>
-          }
-        >
-          <div class="w-[340px] max-h-[70vh] overflow-auto rounded-lg border border-border-base bg-background-base shadow-xl">
+        <Show when={open()} fallback={
+          <button type="button" class="h-9 px-3 rounded-md border border-border-base bg-background-stronger text-12-medium text-text-base shadow-lg flex items-center gap-2" onClick={() => setOpen(true)} title="Show Cascade agent team">
+            <Icon name="sparkles" size="14" />
+            Agents <span class="text-text-weak">{graph()!.tasks.length}</span>
+          </button>
+        }>
+          <div class="w-[360px] max-h-[70vh] overflow-auto rounded-lg border border-border-base bg-background-base shadow-xl">
             <div class="px-3 py-2 border-b border-border-weaker-base flex items-center justify-between">
               <div>
                 <div class="text-13-medium text-text-base">Vexis Cascade</div>
                 <div class="text-11-regular text-text-weak">Agent team execution graph</div>
               </div>
-              <button
-                type="button"
-                class="size-7 rounded hover:bg-background-stronger flex items-center justify-center"
-                onClick={() => setOpen(false)}
-                aria-label="Close Cascade panel"
-              >
+              <button type="button" class="size-7 rounded hover:bg-background-stronger flex items-center justify-center" onClick={() => setOpen(false)} aria-label="Close Cascade panel">
                 <Icon name="xmark-small" size="14" />
               </button>
             </div>
@@ -83,24 +77,27 @@ export function CascadePanel() {
                   const running = () => sync().session.data.session_status[node.item.id]?.type !== "idle"
                   const taskID = () => node.metadata?.taskID ?? node.item.id
                   const deps = () => node.metadata?.dependsOn ?? []
+                  const role = () => node.metadata?.role ?? "worker"
+                  const isolated = () => node.metadata?.git?.isolated === true
+                  const branch = () => node.metadata?.git?.branch
 
                   return (
                     <div class="rounded-md border border-border-weaker-base bg-background-stronger px-3 py-2">
                       <div class="flex items-center gap-2">
-                        <span
-                          class="size-2 rounded-full"
-                          classList={{ "bg-icon-info": running(), "bg-icon-success": !running() }}
-                        />
+                        <span class="size-2 rounded-full" classList={{ "bg-icon-info": running(), "bg-icon-success": !running() }} />
                         <span class="text-12-medium text-text-base truncate">{taskID()}</span>
-                        <span class="ms-auto text-11-regular text-text-weak">
-                          {running() ? "running" : "complete"}
-                        </span>
+                        <span class="ms-auto text-11-regular text-text-weak">{running() ? "running" : "complete"}</span>
                       </div>
+                      <div class="text-11-medium text-text-base mt-1">{role()}</div>
                       <div class="text-11-regular text-text-weak mt-1 truncate">{node.item.title}</div>
+                      <div class="flex items-center gap-2 mt-1 text-10-regular text-text-faint">
+                        <span>{isolated() ? "Git worktree" : "Shared workspace"}</span>
+                        <Show when={branch()}>
+                          <span>· {branch()}</span>
+                        </Show>
+                      </div>
                       <Show when={deps().length}>
-                        <div class="text-10-regular text-text-faint mt-1">
-                          depends on: {deps().join(", ")}
-                        </div>
+                        <div class="text-10-regular text-text-faint mt-1">depends on: {deps().join(", ")}</div>
                       </Show>
                     </div>
                   )
