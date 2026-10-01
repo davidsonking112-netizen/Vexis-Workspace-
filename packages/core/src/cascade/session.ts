@@ -25,7 +25,7 @@ const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>) => {
 
   return PromptInput.Prompt.make({
     text: [
-      `You are a Vexis Cascade worker. Execute task: ${task.title ?? task.id}`,
+      `You are a Vexis Cascade worker. Execute task: ${task.title ?? task.id}`,\n      task.prompt ?? "",
       `Task ID: ${task.id}`,
       dependencyContext,
       "",
