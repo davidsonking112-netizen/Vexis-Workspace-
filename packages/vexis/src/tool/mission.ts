@@ -1,6 +1,7 @@
 import { CascadeSession } from "@vexis/core/cascade"
 import { plan } from "@vexis/core/cascade/planner"
 import { Location } from "@vexis/core/location"
+import { ProjectMemory } from "@vexis/core/project/memory"
 import { Effect, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import * as Tool from "./tool"
@@ -15,6 +16,7 @@ export const MissionTool = Tool.define(
   "mission",
   Effect.gen(function* () {
     const instance = yield* InstanceState.context
+    const memory = yield* ProjectMemory.Service
 
     return {
       description:
@@ -31,6 +33,25 @@ export const MissionTool = Tool.define(
             parentSessionID: ctx.sessionID,
             plan: mission,
             concurrency: params.concurrency,
+          })
+
+          const summary = [...result.results.values()].map((item) => {
+            const artifact = item.artifacts[0]?.value as { output?: string } | undefined
+            return `[${item.id}] ${item.state}: ${artifact?.output ?? item.error ?? ""}`
+          }).join("\\n")
+
+          yield* memory.append({
+            directory: instance.directory,
+            entry: {
+              topic: `Mission: ${params.request.slice(0, 80)}`,
+              content: [
+                `Request: ${params.request}`,
+                "",
+                "Outcome:",
+                summary,
+              ].join("\\n"),
+              source: "vexis-mission",
+            },
           })
 
           const graph = mission.tasks.map((task) => {
