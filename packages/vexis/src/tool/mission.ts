@@ -38,7 +38,7 @@ export const MissionTool = Tool.define(
           const summary = [...result.results.values()].map((item) => {
             const artifact = item.artifacts[0]?.value as { output?: string } | undefined
             return `[${item.id}] ${item.state}: ${artifact?.output ?? item.error ?? ""}`
-          }).join("\\n")
+          }).join("\n")
 
           yield* memory.append({
             directory: instance.directory,
@@ -49,7 +49,7 @@ export const MissionTool = Tool.define(
                 "",
                 "Outcome:",
                 summary,
-              ].join("\\n"),
+              ].join("\n"),
               source: "vexis-mission",
             },
           })
