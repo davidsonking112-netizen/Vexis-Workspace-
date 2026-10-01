@@ -85,8 +85,11 @@ export const run = (
     const baseHead = baseRepo ? yield* git.history.head(baseRepo) : undefined
     const baseBranch = baseRepo ? yield* git.history.branch(baseRepo) : undefined
     const baseChanges = baseRepo
-      ? yield* git.change.capture({ repository: baseRepo, path: input.location.directory }).pipe(Effect.catch(() => Effect.succeed(Git.ChangeSet.make(""))))
+      ? yield* git.change.capture({ repository: baseRepo, path: input.location.directory }).pipe(
+          Effect.catch(() => Effect.succeed(Git.ChangeSet.make(""))),
+        )
       : Git.ChangeSet.make("")
+    const concurrency = baseChanges ? 1 : input.concurrency
 
     const runTask = (task: Task, context: ReadonlyMap<string, unknown>) =>
       Effect.acquireUseRelease(
@@ -126,6 +129,7 @@ export const run = (
                     isolated: execution.isolated,
                     head: baseHead,
                     branch: baseBranch,
+                    dirtyBase: Boolean(baseChanges),
                   },
                 },
               },
@@ -142,10 +146,7 @@ export const run = (
 
             let changeSet: Git.ChangeSet | undefined
             if (execution.repository && task.mutatesWorkspace) {
-              const captured = yield* git.change.capture({
-                repository: execution.repository,
-                path: execution.workspace,
-              })
+              const captured = yield* git.change.capture({ repository: execution.repository, path: execution.workspace })
               if (captured && baseRepo && execution.isolated) {
                 yield* git.change.apply({
                   repository: baseRepo,
@@ -156,17 +157,15 @@ export const run = (
               changeSet = captured || undefined
             }
 
-            return [
-              resultArtifact(task, {
-                sessionID: created.id,
-                output,
-                workspace: execution.workspace,
-                isolated: execution.isolated,
-                changeSet,
-                baseHead,
-                baseBranch,
-              }),
-            ]
+            return [resultArtifact(task, {
+              sessionID: created.id,
+              output,
+              workspace: execution.workspace,
+              isolated: execution.isolated,
+              changeSet,
+              baseHead,
+              baseBranch,
+            })]
           }),
         (execution) =>
           execution.isolated && baseRepo
@@ -183,7 +182,7 @@ export const run = (
     }
 
     return yield* Cascade.run(plan, {
-      concurrency: input.concurrency,
+      concurrency,
       capabilities: CapabilityRegistry.capabilities(),
       onEvent: input.onEvent,
     })
