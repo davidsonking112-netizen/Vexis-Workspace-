@@ -139,7 +139,7 @@ export const run = (
                 },
               },
             })
-            yield* sessions.prompt({ sessionID: created.id, prompt: taskPrompt(task, context) })
+            yield* sessions.prompt({ sessionID: created.id, prompt: taskPrompt(task, context, projectMemory) })
             yield* sessions.wait(created.id)
             const messages = yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
             const output = messages
