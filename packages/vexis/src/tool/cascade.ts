@@ -13,7 +13,7 @@ const Task = Schema.Struct({
 })
 
 export const Parameters = Schema.Struct({
-  tasks: Schema.Array(Task).pipe(Schema.minItems(1)),
+  tasks: Schema.Array(Task),
   concurrency: Schema.optional(Schema.Number),
   synthesis_prompt: Schema.optional(Schema.String),
   synthesis_agent: Schema.optional(Schema.String),
