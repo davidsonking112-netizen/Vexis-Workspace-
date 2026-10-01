@@ -25,7 +25,8 @@ const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>) => {
 
   return PromptInput.Prompt.make({
     text: [
-      `You are a Vexis Cascade worker. Execute task: ${task.title ?? task.id}`,\n      task.prompt ?? "",
+      `You are a Vexis Cascade worker. Execute task: ${task.title ?? task.id}`,
+      task.prompt ?? "",
       `Task ID: ${task.id}`,
       dependencyContext,
       "",
@@ -47,6 +48,7 @@ export const run = (input: RunInput): Effect.Effect<ProjectResult, unknown, Sess
           Effect.gen(function* () {
             const created = yield* sessions.create({
               location: input.location,
+              parentID: input.parentSessionID ? Session.ID.make(input.parentSessionID) : undefined,
               agent: task.agent ?? input.agent,
             })
             sessionIDs.set(task.id, created.id)
