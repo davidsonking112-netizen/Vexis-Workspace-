@@ -49,6 +49,13 @@ export const run = (input: RunInput): Effect.Effect<ProjectResult, unknown, Sess
               location: input.location,
               parentID: input.parentSessionID ? Session.ID.make(input.parentSessionID) : undefined,
               agent: task.agent ?? input.agent,
+              metadata: {
+                cascade: {
+                  taskID: task.id,
+                  dependsOn: task.dependsOn ?? [],
+                  parentSessionID: input.parentSessionID,
+                },
+              },
             })
             yield* sessions.prompt({
               sessionID: created.id,
