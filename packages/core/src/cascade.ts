@@ -27,6 +27,7 @@ export type Task = {
   readonly id: TaskID
   readonly title?: string
   readonly capability?: string
+  readonly agent?: string
   readonly dependsOn?: readonly TaskID[]
   readonly run: (context: TaskContext) => Effect.Effect<readonly Artifact[], unknown>
 }
