@@ -14,7 +14,6 @@ function enabledByExperimental(key: string, legacyKey?: string) {
 
 export const Flag = {
   // Vexis-native environment variables. Legacy OPENCODE_* variables remain readable for migration compatibility.
-  VEXIS_CONFIG_DIR: process.env["VEXIS_CONFIG_DIR"],
   VEXIS_DB: process.env["VEXIS_DB"] ?? process.env["OPENCODE_DB"],
   VEXIS_WORKSPACE_ID: process.env["VEXIS_WORKSPACE_ID"] ?? process.env["OPENCODE_WORKSPACE_ID"],
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
