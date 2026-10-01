@@ -107,6 +107,10 @@ jobs:
             for (const [from, to] of namespaceMap) {
               text = text.replaceAll(from, to)
             }
+            // The workspace graph defines the first-party namespace root. Some
+            // generated/docs strings are not dependency edges but are still part
+            // of that namespace contract.
+            text = text.replaceAll("@opencode-ai/", "@vexis/")
 
             // Runtime package path migration is explicit and structural.
             text = text.replaceAll("packages/opencode", "packages/vexis")
@@ -139,6 +143,7 @@ jobs:
 
           const stale = []
           for (const file of files) {
+            if (file.endsWith(".github/workflows/vexis-namespace-migration.yml")) continue
             const text = fs.readFileSync(file, "utf8")
             if (text.includes("@opencode-ai/") || text.includes("packages/opencode")) {
               stale.push(path.relative(root, file))
