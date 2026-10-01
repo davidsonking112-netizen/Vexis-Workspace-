@@ -17,6 +17,7 @@ ts-dist
 .serena/
 **/.omo
 .omo/
+.vexis/memory.md
 /result
 refs
 Session.vim
