@@ -47,7 +47,7 @@ export const run = (input: RunInput): Effect.Effect<ProjectResult, unknown, Sess
           Effect.gen(function* () {
             const created = yield* sessions.create({
               location: input.location,
-              agent: input.agent,
+              agent: task.agent ?? input.agent,
             })
             sessionIDs.set(task.id, created.id)
 
