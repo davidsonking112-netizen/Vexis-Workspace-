@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { PromptInput } from "@vexis/schema/prompt-input"
-import { Session } from "../session"
+import * as Session from "../session"
 import { Location } from "../location"
 import { Cascade, type Plan, type Task, type ProjectResult } from "../cascade"
 
