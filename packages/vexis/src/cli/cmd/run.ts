@@ -269,7 +269,8 @@ export const RunCommand = effectCmd({
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
     yield* Effect.promise(async () => {
-      const missionMode = args._?.[0] === "mission"\n      const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
+      const missionMode = args._?.[0] === "mission"
+      const rawMessage = [...args.message, ...(args["--"] || [])].join(" ")
       const interactive = args.mini
       const auto = args.auto || args.yolo || args["dangerously-skip-permissions"]
       const thinking = interactive ? (args.thinking ?? true) : (args.thinking ?? false)
