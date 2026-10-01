@@ -57,6 +57,7 @@ export const CascadeTool = Tool.define(
             plan: {
               tasks,
             },
+            concurrency: params.concurrency,
           })
 
           const summary = [...result.results.values()]
