@@ -9,7 +9,7 @@ const addTask = (tasks: Task[], task: Omit<Task, "run"> & { run?: Task["run"] })
 const roleTask = (tasks: Task[], input: Omit<Task, "run" | "role" | "mutatesWorkspace"> & { run?: Task["run"]; role: string }) => {
   const role = getRole(input.role)
   if (!role) throw new Error(`Unknown Cascade role: ${input.role}`)
-  addTask(tasks, { ...input, role: role.id, mutatesWorkspace: role.mutatesWorkspace, agent: input.agent ?? role.agent })
+  addTask(tasks, { ...input, role: role.id, capability: role.id, mutatesWorkspace: role.mutatesWorkspace, agent: input.agent ?? role.agent })
 }
 
 export const plan = (mission: Mission): Plan => {
