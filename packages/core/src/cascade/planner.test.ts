@@ -13,6 +13,8 @@ describe("Cascade planner", () => {
     expect(ids).toContain("security")
     expect(ids).toContain("documentation")
     expect(ids).toContain("__cascade_synthesis__")
+    expect(result.tasks.find((task) => task.id === "implementation")?.capability).toBe("developer")
+    expect(result.tasks.find((task) => task.id === "security")?.capability).toBe("security")
 
     const verification = result.tasks.find((task) => task.id === "verification")
     expect(verification?.dependsOn).toEqual(["implementation"])
