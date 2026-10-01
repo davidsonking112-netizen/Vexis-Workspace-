@@ -1,0 +1,1 @@
+Use this tool for complex requests that benefit from an automatic Vexis agent team. Give it the complete user request; it will plan specialist tasks, execute independent work concurrently, and synthesize the results. Prefer this over manually constructing a cascade when the task naturally decomposes into research, implementation, testing, security, review, or documentation.
