@@ -138,7 +138,7 @@ export class Service extends Context.Service<Service, Interface>()("@opencode/Co
 export const use = serviceUse(Service)
 
 function globalConfigFile() {
-  const candidates = ["opencode.jsonc", "opencode.json", "config.json"].map((file) =>
+  const candidates = ["vexis.jsonc", "vexis.json", "opencode.jsonc", "opencode.json", "config.json"].map((file) =>
     path.join(Global.Path.config, file),
   )
   for (const file of candidates) {
@@ -269,7 +269,7 @@ const layer = Layer.effect(
             .pipe(Effect.catch(() => Effect.void))
         }
       }
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env))
+      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "vexis.json"), env))
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.json"), env))
       result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "opencode.jsonc"), env))
 
