@@ -1,0 +1,181 @@
+name: Vexis Namespace Migration
+
+on:
+  push:
+    branches: [dev]
+
+permissions:
+  contents: write
+
+jobs:
+  migrate:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout dev
+        uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Migrate workspace graph
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          node <<'NODE'
+          const fs = require("node:fs")
+          const path = require("node:path")
+          const cp = require("node:child_process")
+
+          const root = process.cwd()
+
+          function walk(dir) {
+            const out = []
+            for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+              if (entry.name === ".git" || entry.name === "node_modules") continue
+              const full = path.join(dir, entry.name)
+              if (entry.isDirectory()) out.push(...walk(full))
+              else out.push(full)
+            }
+            return out
+          }
+
+          function readJson(file) {
+            return JSON.parse(fs.readFileSync(file, "utf8"))
+          }
+
+          // Build the migration map from the actual workspace package graph.
+          const packageFiles = walk(root).filter((f) => path.basename(f) === "package.json")
+          const namespaceMap = new Map()
+          const workspacePackages = new Map()
+
+          for (const file of packageFiles) {
+            const rel = path.relative(root, file).replaceAll(path.sep, "/")
+            if (rel === "package.json" || rel.startsWith("node_modules/")) continue
+            let pkg
+            try { pkg = readJson(file) } catch { continue }
+            if (typeof pkg.name !== "string") continue
+            workspacePackages.set(pkg.name, rel)
+            if (pkg.name.startsWith("@opencode-ai/")) {
+              namespaceMap.set(pkg.name, "@vexis/" + pkg.name.slice("@opencode-ai/".length))
+            }
+          }
+
+          if (namespaceMap.size === 0) {
+            console.log("No @opencode-ai workspace packages remain; namespace migration already applied.")
+          }
+
+          // Move the runtime package first. Git records this as a real path rename.
+          const oldRuntime = path.join(root, "packages/opencode")
+          const newRuntime = path.join(root, "packages/vexis")
+          if (fs.existsSync(oldRuntime) && !fs.existsSync(newRuntime)) {
+            cp.execFileSync("git", ["mv", "packages/opencode", "packages/vexis"], { stdio: "inherit" })
+          }
+
+          const oldBin = path.join(root, "packages/vexis/bin/opencode")
+          const newBin = path.join(root, "packages/vexis/bin/vexis")
+          if (fs.existsSync(oldBin) && !fs.existsSync(newBin)) {
+            cp.execFileSync("git", ["mv", "packages/vexis/bin/opencode", "packages/vexis/bin/vexis"], { stdio: "inherit" })
+          }
+
+          // Exact namespace/path migrations only. We do not rewrite arbitrary "opencode" branding
+          // or third-party package names such as opencode-gitlab-auth.
+          const textExtensions = new Set([
+            ".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".json", ".jsonc",
+            ".md", ".mdx", ".txt", ".toml", ".yml", ".yaml", ".css", ".scss",
+            ".html", ".xml", ".svg", ".sh"
+          ])
+
+          const files = walk(root).filter((file) => {
+            if (file.includes("/node_modules/")) return false
+            const ext = path.extname(file).toLowerCase()
+            return textExtensions.has(ext) || path.basename(file) === "Dockerfile"
+          })
+
+          for (const file of files) {
+            let text = fs.readFileSync(file, "utf8")
+            const original = text
+
+            // Dependency-graph edge migration: only names that were discovered as
+            // first-party @opencode-ai workspace packages are changed.
+            for (const [from, to] of namespaceMap) {
+              const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+              text = text.replace(new RegExp(escaped.replace("/", "\\/") + "(?![A-Za-z0-9._/-])", "g"), to)
+            }
+
+            // Runtime package path migration is explicit and structural.
+            text = text.replaceAll("packages/opencode", "packages/vexis")
+            text = text.replaceAll("./bin/opencode", "./bin/vexis")
+
+            if (text !== original) fs.writeFileSync(file, text)
+          }
+
+          // Ensure the runtime package advertises its new binary path.
+          const runtimePkgFile = path.join(root, "packages/vexis/package.json")
+          const runtimePkg = readJson(runtimePkgFile)
+          if (runtimePkg.name !== "vexis") {
+            throw new Error("packages/vexis/package.json must remain the runtime package named 'vexis'")
+          }
+          if (runtimePkg.bin?.vexis === "./bin/opencode") {
+            runtimePkg.bin.vexis = "./bin/vexis"
+            fs.writeFileSync(runtimePkgFile, JSON.stringify(runtimePkg, null, 2) + "\n")
+          }
+
+          // Validate package namespace uniqueness and absence of stale first-party edges.
+          const finalPackageFiles = walk(root).filter((f) => path.basename(f) === "package.json")
+          const names = new Map()
+          for (const file of finalPackageFiles) {
+            let pkg
+            try { pkg = readJson(file) } catch { continue }
+            if (!pkg.name) continue
+            if (names.has(pkg.name)) throw new Error(`Duplicate workspace package name: ${pkg.name}`)
+            names.set(pkg.name, file)
+          }
+
+          const stale = []
+          for (const file of files) {
+            const text = fs.readFileSync(file, "utf8")
+            if (text.includes("@opencode-ai/") || text.includes("packages/opencode")) {
+              stale.push(path.relative(root, file))
+            }
+          }
+          if (stale.length) {
+            throw new Error("Stale first-party namespace/path references remain:\n" + stale.join("\n"))
+          }
+
+          console.log(`Migrated ${namespaceMap.size} workspace namespaces and moved packages/opencode -> packages/vexis.`)
+          console.log("Namespace map:")
+          for (const [from, to] of namespaceMap) console.log(`  ${from} -> ${to}`)
+          NODE
+
+      - name: Regenerate Bun lockfile
+        run: bun install --lockfile-only --no-progress
+
+      - name: Validate migrated runtime
+        run: |
+          test -d packages/vexis
+          test ! -d packages/opencode
+          test -f packages/vexis/bin/vexis
+          bun run --cwd packages/vexis typecheck
+
+      - name: Commit migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "vexis-migration[bot]"
+          git config user.email "vexis-migration[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No migration changes to commit."
+            exit 0
+          fi
+          git rm -f .github/workflows/vexis-namespace-migration.yml
+          git add -A
+          git commit -m "refactor: migrate workspace namespace to Vexis"
+          git push origin HEAD:dev
