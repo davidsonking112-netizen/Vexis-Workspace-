@@ -11,6 +11,7 @@ import { GrepTool } from "./grep"
 import { ReadTool } from "./read"
 import { TaskTool } from "./task"
 import { CascadeTool } from "./cascade"
+import { MissionTool } from "./mission"
 import { Database } from "@vexis/core/database/database"
 import { TodoWriteTool } from "./todo"
 import { WebFetchTool } from "./webfetch"
@@ -68,12 +69,14 @@ export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false
 type TaskDef = Tool.InferDef<typeof TaskTool>
 type ReadDef = Tool.InferDef<typeof ReadTool>
 type CascadeDef = Tool.InferDef<typeof CascadeTool>
+type MissionDef = Tool.InferDef<typeof MissionTool>
 
 type State = {
   custom: Tool.Def[]
   builtin: Tool.Def[]
   task: TaskDef
   read: ReadDef
+  mission: MissionDef
 }
 
 export interface Interface {
@@ -103,6 +106,7 @@ const layer = Layer.effect(
     const invalid = yield* InvalidTool
     const task = yield* TaskTool
     const cascade = yield* CascadeTool
+    const mission = yield* MissionTool
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
@@ -219,6 +223,7 @@ const layer = Layer.effect(
           write: Tool.init(writetool),
           task: Tool.init(task),
           cascade: Tool.init(cascade),
+          mission: Tool.init(mission),
           fetch: Tool.init(webfetch),
           todo: Tool.init(todo),
           search: Tool.init(websearch),
@@ -243,6 +248,7 @@ const layer = Layer.effect(
             tool.write,
             tool.task,
             tool.cascade,
+            tool.mission,
             tool.fetch,
             tool.todo,
             tool.search,
@@ -254,6 +260,7 @@ const layer = Layer.effect(
           ],
           task: tool.task,
           cascade: tool.cascade,
+          mission: tool.mission,
           read: tool.read,
         }
       }),
