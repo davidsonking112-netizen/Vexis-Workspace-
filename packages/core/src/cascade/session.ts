@@ -31,6 +31,7 @@ const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>, memory: s
       task.prompt ?? "",
       `Task ID: ${task.id}`,
       task.role ? `Specialist role: ${task.role}` : "",
+      memory ? `Project memory:\n${memory}` : "",
       dependencyContext,
       "",
       "Work from the supplied artifacts first. Do not repeat upstream work unless needed to validate it.",
@@ -83,6 +84,8 @@ export const run = (
     const git = yield* Git.Service
     const global = yield* Global.Service
     const fs = yield* FSUtil.Service
+    const memory = yield* ProjectMemory.Service
+    const projectMemory = yield* memory.context(input.location.directory)
     const baseRepo = yield* git.repo.discover(input.location.directory)
     const baseHead = baseRepo ? yield* git.history.head(baseRepo) : undefined
     const baseBranch = baseRepo ? yield* git.history.branch(baseRepo) : undefined
