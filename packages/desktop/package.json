@@ -1,13 +1,13 @@
 {
-  "name": "@opencode-ai/desktop",
+  "name": "@vexis/workspace-desktop",
   "private": true,
   "version": "1.18.34",
   "type": "module",
   "license": "MIT",
-  "homepage": "https://opencode.ai",
+  "homepage": "https://github.com/davidsonking112-netizen/Vexis-Workspace-",
   "author": {
-    "name": "OpenCode",
-    "email": "hello@opencode.ai"
+    "name": "Vexis Workspace",
+    "email": "hello@vexis.dev"
   },
   "scripts": {
     "typecheck": "tsgo -b",
