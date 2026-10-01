@@ -94,6 +94,7 @@ jobs:
 
           const files = walk(root).filter((file) => {
             if (file.includes("/node_modules/")) return false
+            if (file.includes("/.github/workflows/")) return false
             const ext = path.extname(file).toLowerCase()
             return textExtensions.has(ext) || path.basename(file) === "Dockerfile"
           })
@@ -143,7 +144,7 @@ jobs:
 
           const stale = []
           for (const file of files) {
-            if (file.endsWith(".github/workflows/vexis-namespace-migration.yml")) continue
+            if (file.includes("/.github/workflows/")) continue
             const text = fs.readFileSync(file, "utf8")
             if (text.includes("@opencode-ai/") || text.includes("packages/opencode")) {
               stale.push(path.relative(root, file))
@@ -208,7 +209,6 @@ jobs:
             echo "No migration changes to commit."
             exit 0
           fi
-          git rm -f .github/workflows/vexis-namespace-migration.yml
           git add -A
           git commit -m "refactor: migrate workspace namespace to Vexis"
           git push origin HEAD:dev
