@@ -26,6 +26,7 @@ export type TaskContext = {
 export type Task = {
   readonly id: TaskID
   readonly title?: string
+  readonly prompt?: string
   readonly capability?: string
   readonly agent?: string
   readonly dependsOn?: readonly TaskID[]
