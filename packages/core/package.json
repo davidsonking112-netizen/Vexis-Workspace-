@@ -18,6 +18,8 @@
     "./session/runner": "./src/session/runner/index.ts",
     "./system-context": "./src/system-context/index.ts",
     "./cascade": "./src/cascade.ts",
+    "./cascade/planner": "./src/cascade/planner.ts",
+    "./cascade/capability": "./src/cascade/capability.ts",
     "./*": "./src/*.ts"
   },
   "imports": {
