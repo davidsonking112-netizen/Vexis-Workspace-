@@ -16,6 +16,7 @@ export type RunInput = {
   readonly plan: Plan
   readonly agent?: string
   readonly parentSessionID?: string
+  readonly concurrency?: number
 }
 
 const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>) => {
@@ -38,8 +39,6 @@ const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>) => {
 export const run = (input: RunInput): Effect.Effect<ProjectResult, unknown, Session.Service> =>
   Effect.gen(function* () {
     const sessions = yield* Session.Service
-    const sessionIDs = new Map<string, string>()
-
     const plan: Plan = {
       ...input.plan,
       tasks: input.plan.tasks.map((task) => ({
@@ -51,8 +50,6 @@ export const run = (input: RunInput): Effect.Effect<ProjectResult, unknown, Sess
               parentID: input.parentSessionID ? Session.ID.make(input.parentSessionID) : undefined,
               agent: task.agent ?? input.agent,
             })
-            sessionIDs.set(task.id, created.id)
-
             yield* sessions.prompt({
               sessionID: created.id,
               prompt: taskPrompt(task, context.artifacts),
@@ -87,5 +84,5 @@ export const run = (input: RunInput): Effect.Effect<ProjectResult, unknown, Sess
       })),
     }
 
-    return yield* Cascade.run(plan)
+    return yield* Cascade.run(plan, { concurrency: input.concurrency })
   })
