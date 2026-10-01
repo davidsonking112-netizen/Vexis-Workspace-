@@ -46,7 +46,7 @@ vexis --help
 From the repository during development:
 
 ```bash
-bun run --cwd packages/opencode src/index.ts --help
+bun run --cwd packages/vexis src/index.ts --help
 ```
 
 ### Architecture

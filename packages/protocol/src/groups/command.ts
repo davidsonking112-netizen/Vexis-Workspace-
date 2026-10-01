@@ -1,5 +1,5 @@
-import { Command } from "@opencode-ai/schema/command"
-import { Location } from "@opencode-ai/schema/location"
+import { Command } from "@vexis/schema/command"
+import { Location } from "@vexis/schema/location"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { LocationQuery, locationQueryOpenApi } from "./location"

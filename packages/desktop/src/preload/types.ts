@@ -1,7 +1,7 @@
-import type { DesktopMenuAction } from "@opencode-ai/app/desktop-menu"
-import type { WslServersPlatform } from "@opencode-ai/app/wsl/types"
-import type { UpdaterState } from "@opencode-ai/app/updater"
-import type { DesktopNativeBundle } from "@opencode-ai/app/i18n/desktop-native"
+import type { DesktopMenuAction } from "@vexis/app/desktop-menu"
+import type { WslServersPlatform } from "@vexis/app/wsl/types"
+import type { UpdaterState } from "@vexis/app/updater"
+import type { DesktopNativeBundle } from "@vexis/app/i18n/desktop-native"
 export type {
   WslDistroProbe,
   WslInstalledDistro,
@@ -14,7 +14,7 @@ export type {
   WslServerRuntime,
   WslServersEvent,
   WslServersState,
-} from "@opencode-ai/app/wsl/types"
+} from "@vexis/app/wsl/types"
 
 export type ServerReadyData = {
   url: string

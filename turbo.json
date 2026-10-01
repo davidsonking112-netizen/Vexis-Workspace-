@@ -13,22 +13,22 @@
       "outputs": [],
       "passThroughEnv": ["*"]
     },
-    "@opencode-ai/core#test": {
+    "@vexis/core#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/function#test": {
+    "@vexis/function#test": {
       "outputs": []
     },
-    "@opencode-ai/app#test": {
+    "@vexis/app#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/ui#test": {
+    "@vexis/ui#test": {
       "dependsOn": ["^build"],
       "outputs": []
     },
-    "@opencode-ai/session-ui#test": {
+    "@vexis/session-ui#test": {
       "dependsOn": ["^build"],
       "outputs": []
     }
