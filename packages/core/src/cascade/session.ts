@@ -7,7 +7,9 @@ import { Global } from "../global"
 import { FSUtil } from "../fs-util"
 import { Git } from "../git"
 import { Cascade, type Plan, type Task, type ProjectResult, type Artifact } from "../cascade"
-import * as CapabilityRegistry from "./capability"\nimport { AbsolutePath } from "../schema"\nimport { ProjectMemory } from "../project/memory"
+import * as CapabilityRegistry from "./capability"
+import { AbsolutePath } from "../schema"
+import { ProjectMemory } from "../project/memory"
 
 export type RunInput = {
   readonly location: Location.Ref
