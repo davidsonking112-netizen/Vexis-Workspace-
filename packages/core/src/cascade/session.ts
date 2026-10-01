@@ -7,7 +7,7 @@ import { Global } from "../global"
 import { FSUtil } from "../fs-util"
 import { Git } from "../git"
 import { Cascade, type Plan, type Task, type ProjectResult, type Artifact } from "../cascade"
-import * as CapabilityRegistry from "./capability"
+import * as CapabilityRegistry from "./capability"\nimport { AbsolutePath } from "../schema"
 
 export type RunInput = {
   readonly location: Location.Ref
@@ -106,7 +106,7 @@ export const run = (
           yield* fs.ensureDir(path.dirname(workspace))
           const repository = yield* git.worktree.create({
             repository: baseRepo!,
-            directory: Location.Ref.make({ directory: workspace, workspaceID: input.location.workspaceID }).directory,
+            directory: AbsolutePath.make(workspace),
           })
           return { workspace, repository, isolated: true }
         }),
