@@ -105,8 +105,7 @@ jobs:
             // Dependency-graph edge migration: only names that were discovered as
             // first-party @opencode-ai workspace packages are changed.
             for (const [from, to] of namespaceMap) {
-              const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-              text = text.replace(new RegExp(escaped.replace("/", "\\/") + "(?![A-Za-z0-9._/-])", "g"), to)
+              text = text.replaceAll(from, to)
             }
 
             // Runtime package path migration is explicit and structural.
