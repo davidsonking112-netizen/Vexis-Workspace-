@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
   "version": "1.18.34",
-  "name": "opencode",
+  "name": "vexis",
   "type": "module",
   "license": "MIT",
   "private": true,
@@ -16,7 +16,7 @@
     "dev:temporary": "bun run ./src/temporary.ts"
   },
   "bin": {
-    "opencode": "./bin/opencode"
+    "vexis": "./bin/opencode"
   },
   "exports": {
     "./*": "./src/*.ts"
@@ -39,7 +39,7 @@
     "@types/babel__core": "7.20.5",
     "@types/bun": "catalog:",
     "@types/cross-spawn": "catalog:",
-    "@types/mime-types": "3.0.1",
+    "@types/mime-types": "3.0.2",
     "@types/npm-package-arg": "6.1.4",
     "@types/semver": "^7.5.8",
     "@types/turndown": "5.0.5",
@@ -48,7 +48,7 @@
     "drizzle-orm": "catalog:",
     "prettier": "3.6.2",
     "typescript": "catalog:",
-    "vscode-languageserver-types": "3.17.5",
+    "vscode-languageserver-types": "3.17.0",
     "why-is-node-running": "3.2.2"
   },
   "dependencies": {
@@ -124,7 +124,7 @@
     "glob": "13.0.5",
     "google-auth-library": "10.5.0",
     "gray-matter": "4.0.3",
-    "htmlparser2": "8.0.2",
+    "htmlparser2": "8.0.0",
     "ignore": "7.0.5",
     "immer": "11.1.4",
     "jsonc-parser": "3.3.1",
