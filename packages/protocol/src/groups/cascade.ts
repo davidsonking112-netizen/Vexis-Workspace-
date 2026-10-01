@@ -3,6 +3,7 @@ import { Schema } from "effect"
 import { AbsolutePath } from "@vexis/schema/schema"
 import { Agent } from "@vexis/schema/agent"
 import { Session } from "@vexis/schema/session"
+import { Workspace } from "@vexis/schema/workspace"
 
 const Task = Schema.Struct({
   id: Schema.String,
@@ -15,7 +16,7 @@ const Task = Schema.Struct({
 const Plan = Schema.Struct({
   location: Schema.Struct({
     directory: AbsolutePath,
-    workspaceID: Schema.String.pipe(Schema.optional),
+    workspaceID: Workspace.ID.pipe(Schema.optional),
   }),
   tasks: Schema.Array(Task),
   concurrency: Schema.Number.pipe(Schema.optional),
