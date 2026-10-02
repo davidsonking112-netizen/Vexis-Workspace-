@@ -110,7 +110,7 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
 
     const emit = (event: Event) => options.onEvent ? options.onEvent(event) : Effect.void
     yield* emit({ type: options.resume ? "cascade.resumed" : "cascade.started", ...(options.resume ? { completedCount: results.size } : { taskCount: tasks.size }) } as Event)
-    if (!options.resume) yield* emit({ type: "cascade.started", taskCount: tasks.size })
+    if (options.resume) yield* emit({ type: "cascade.started", taskCount: tasks.size })
 
     const executeTask = (task: Task) =>
       Effect.gen(function* () {
