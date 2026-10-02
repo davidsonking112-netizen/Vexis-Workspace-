@@ -183,5 +183,5 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
       return yield* Effect.fail(error instanceof Error ? error : new Error(reason))
     }
   }).pipe(
-    Effect.onInterrupt(() => Effect.void),
+    Effect.onInterrupt(() => options.onEvent ? options.onEvent({ type: "cascade.cancelled", reason: "interrupted" }) : Effect.void),
   )
