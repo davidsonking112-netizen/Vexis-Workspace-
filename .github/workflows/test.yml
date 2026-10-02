@@ -31,9 +31,11 @@ jobs:
         settings:
           - name: linux
             host: blacksmith-4vcpu-ubuntu-2404
+            fork_host: ubuntu-24.04
           - name: windows
             host: blacksmith-4vcpu-windows-2025
-    runs-on: ${{ matrix.settings.host }}
+            fork_host: windows-2025
+    runs-on: ${{ github.repository_owner == 'anomalyco' && matrix.settings.host || matrix.settings.fork_host }}
     defaults:
       run:
         shell: bash
