@@ -1,4 +1,4 @@
-import { DateTime, Effect, Fiber } from "effect"
+import { DateTime, Deferred, Effect, Fiber } from "effect"
 import path from "path"
 import { PromptInput } from "@vexis/schema/prompt-input"
 import * as Session from "../session"
@@ -12,6 +12,7 @@ import { AbsolutePath } from "../schema"
 import { ProjectMemory } from "../project/memory"
 import { EventV2 } from "../event"
 import { SessionEvent } from "../session/event"
+import { KeyedMutex } from "../effect/keyed-mutex"
 
 export type RunInput = {
   readonly location: Location.Ref
@@ -89,7 +90,8 @@ const resultArtifact = (
   },
 })
 
-const activeRuns = new Map<string, Fiber.Fiber<unknown, unknown>>()
+const activeRuns = new Map<string, Fiber.Fiber<ProjectResult, unknown>>()
+const runMutex = KeyedMutex.makeUnsafe<string>()
 
 const errorData = (error: unknown) => {
   if (error instanceof Error) return { name: error.name, message: error.message }
@@ -124,14 +126,17 @@ export const run = (
           const sessionID = Session.ID.make(input.resumeSessionID!)
           const events: SessionEvent.DurableEvent[] = []
           let after: number | undefined
-          for (let page = 0; page < 100; page++) {
-            const next = yield* sessions.history({ sessionID, after, limit: 100 }).pipe(
-              Effect.catch(() => Effect.succeed({ events: [] as SessionEvent.DurableEvent[], hasMore: false })),
-            )
+          while (true) {
+            const next = yield* sessions.history({ sessionID, after, limit: 100 })
             events.push(...next.events)
             if (!next.hasMore) break
             const last = next.events.at(-1)
-            if (!last?.durable) break
+            if (!last?.durable) {
+              return yield* new Error("Cascade history pagination stopped without a durable sequence")
+            }
+            if (after !== undefined && last.durable.seq <= after) {
+              return yield* new Error("Cascade history pagination did not advance")
+            }
             after = last.durable.seq
           }
           return events
@@ -371,7 +376,26 @@ export const run = (
       resume,
     })
     if (!parentSessionID) return yield* execution
-    const fiber = yield* Effect.fork(execution)
-    activeRuns.set(parentSessionID, fiber)
-    return yield* Fiber.join(fiber).pipe(Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID))))
+
+    const fiber = yield* runMutex.withLock(parentSessionID)(
+      Effect.gen(function* () {
+        const existing = activeRuns.get(parentSessionID)
+        if (existing) return existing
+        const gate = yield* Deferred.make<void>()
+        let created!: Fiber.Fiber<ProjectResult, unknown>
+        const started = execution.pipe(
+          Effect.andThen(Deferred.await(gate)),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (activeRuns.get(parentSessionID) === created) activeRuns.delete(parentSessionID)
+            }),
+          ),
+        )
+        created = yield* Effect.fork(started)
+        activeRuns.set(parentSessionID, created)
+        yield* Deferred.succeed(gate, undefined)
+        return created
+      }),
+    )
+    return yield* Fiber.join(fiber)
   })
