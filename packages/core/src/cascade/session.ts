@@ -18,6 +18,7 @@ export type RunInput = {
   readonly parentSessionID?: string
   readonly concurrency?: number
   readonly onEvent?: (event: Cascade.Event) => Effect.Effect<void, never>
+  readonly resume?: Cascade.ResumeState
 }
 
 const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>, memory: string) => {
@@ -94,7 +95,8 @@ export const run = (
           Effect.catch(() => Effect.succeed(Git.ChangeSet.make(""))),
         )
       : Git.ChangeSet.make("")
-    const concurrency = baseChanges ? 1 : input.concurrency
+    const hasBaseChanges = baseChanges.toString().length > 0
+    const concurrency = hasBaseChanges ? 1 : input.concurrency
 
     const runTask = (task: Task, context: ReadonlyMap<string, unknown>) =>
       Effect.acquireUseRelease(
@@ -129,12 +131,14 @@ export const run = (
                   taskID: task.id,
                   role: task.role,
                   dependsOn: task.dependsOn ?? [],
+                  capability: task.capability,
+                  retries: task.retries ?? 0,
                   parentSessionID: input.parentSessionID,
                   git: {
                     isolated: execution.isolated,
                     head: baseHead,
                     branch: baseBranch,
-                    dirtyBase: Boolean(baseChanges),
+                    dirtyBase: hasBaseChanges,
                   },
                 },
               },
@@ -190,5 +194,6 @@ export const run = (
       concurrency,
       capabilities: CapabilityRegistry.capabilities(),
       onEvent: input.onEvent,
+      resume: input.resume,
     })
   })
