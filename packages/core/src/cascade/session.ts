@@ -410,8 +410,8 @@ export const run = (
         if (existing) return existing
         const gate = yield* Deferred.make<void>()
         let created!: Fiber.Fiber<ProjectResult, unknown>
-        const started = execution.pipe(
-          Effect.andThen(Deferred.await(gate)),
+        const started = Deferred.await(gate).pipe(
+          Effect.andThen(execution),
           Effect.ensuring(
             Effect.sync(() => {
               if (activeRuns.get(parentSessionID) === created) activeRuns.delete(parentSessionID)
