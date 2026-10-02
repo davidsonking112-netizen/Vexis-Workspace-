@@ -431,6 +431,42 @@ export namespace Compaction {
   export type Ended = typeof Ended.Type
 }
 
+export namespace Cascade {
+  const TaskBase = { ...Base, taskID: Schema.String, role: Schema.String.pipe(optional) }
+  export const TaskSpec = Schema.Struct({
+    id: Schema.String, title: Schema.String.pipe(optional), prompt: Schema.String.pipe(optional),
+    capability: Schema.String.pipe(optional), role: Schema.String.pipe(optional), agent: Schema.String.pipe(optional),
+    mutatesWorkspace: Schema.Boolean.pipe(optional), dependsOn: Schema.Array(Schema.String).pipe(optional), retries: Schema.Int.pipe(optional),
+  })
+  export type TaskSpec = typeof TaskSpec.Type
+  export const Artifact = Schema.Struct({
+    key: Schema.String, value: Schema.Unknown, taskID: Schema.String,
+    kind: Schema.Literals(["result", "change", "snapshot", "test", "review", "report"]).pipe(optional),
+    label: Schema.String.pipe(optional), metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
+  })
+  export type Artifact = typeof Artifact.Type
+  export const Started = Event.define({ type: "session.next.cascade.started", ...options, schema: { ...Base, taskCount: Schema.Int, tasks: Schema.Array(TaskSpec).pipe(optional) } })
+  export type Started = typeof Started.Type
+  export const Resumed = Event.define({ type: "session.next.cascade.resumed", ...options, schema: { ...Base, completedCount: Schema.Int } })
+  export type Resumed = typeof Resumed.Type
+  export const TaskStarted = Event.define({ type: "session.next.cascade.task.started", ...options, schema: { ...TaskBase, attempt: Schema.Int } })
+  export type TaskStarted = typeof TaskStarted.Type
+  export const TaskRetrying = Event.define({ type: "session.next.cascade.task.retrying", ...options, schema: { ...TaskBase, attempt: Schema.Int, error: Schema.Unknown } })
+  export type TaskRetrying = typeof TaskRetrying.Type
+  export const TaskArtifact = Event.define({ type: "session.next.cascade.task.artifact", ...options, schema: { ...TaskBase, key: Schema.String, kind: Schema.Literals(["result", "change", "snapshot", "test", "review", "report"]).pipe(optional), label: Schema.String.pipe(optional) } })
+  export type TaskArtifact = typeof TaskArtifact.Type
+  export const TaskCompleted = Event.define({ type: "session.next.cascade.task.completed", ...options, schema: { ...TaskBase, attempts: Schema.Int, artifacts: Schema.Array(Artifact) } })
+  export type TaskCompleted = typeof TaskCompleted.Type
+  export const TaskFailed = Event.define({ type: "session.next.cascade.task.failed", ...options, schema: { ...TaskBase, error: Schema.Unknown, attempts: Schema.Int } })
+  export type TaskFailed = typeof TaskFailed.Type
+  export const TaskCancelled = Event.define({ type: "session.next.cascade.task.cancelled", ...options, schema: { ...TaskBase, reason: Schema.String } })
+  export type TaskCancelled = typeof TaskCancelled.Type
+  export const Cancelled = Event.define({ type: "session.next.cascade.cancelled", ...options, schema: { ...Base, reason: Schema.String } })
+  export type Cancelled = typeof Cancelled.Type
+  export const Completed = Event.define({ type: "session.next.cascade.completed", ...options, schema: { ...Base, taskCount: Schema.Int, completedCount: Schema.Int } })
+  export type Completed = typeof Completed.Type
+}
+
 export namespace RevertEvent {
   export const Staged = Event.define({
     type: "session.next.revert.staged",
@@ -474,6 +510,8 @@ export const DurableDefinitions = Event.inventory(
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
+  Cascade.Started, Cascade.Resumed, Cascade.TaskStarted, Cascade.TaskRetrying, Cascade.TaskArtifact,
+  Cascade.TaskCompleted, Cascade.TaskFailed, Cascade.TaskCancelled, Cascade.Cancelled, Cascade.Completed,
 )
 
 export const Definitions = Event.inventory(
@@ -509,6 +547,8 @@ export const Definitions = Event.inventory(
   RevertEvent.Staged,
   RevertEvent.Cleared,
   RevertEvent.Committed,
+  Cascade.Started, Cascade.Resumed, Cascade.TaskStarted, Cascade.TaskRetrying, Cascade.TaskArtifact,
+  Cascade.TaskCompleted, Cascade.TaskFailed, Cascade.TaskCancelled, Cascade.Cancelled, Cascade.Completed,
 )
 
 export const Durable = Schema.Union(DurableDefinitions, { mode: "oneOf" })
