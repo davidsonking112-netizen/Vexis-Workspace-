@@ -100,12 +100,14 @@ const errorData = (error: unknown) => {
 }
 
 export const cancel = (parentSessionID: string): Effect.Effect<boolean> =>
-  Effect.gen(function* () {
-    const fiber = activeRuns.get(parentSessionID)
-    if (!fiber) return false
-    yield* Fiber.interrupt(fiber)
-    return true
-  })
+  runMutex.withLock(parentSessionID)(
+    Effect.gen(function* () {
+      const fiber = activeRuns.get(parentSessionID)
+      if (!fiber) return false
+      yield* Fiber.interrupt(fiber)
+      return true
+    }),
+  )
 
 export const run = (
   input: RunInput,
