@@ -332,12 +332,11 @@ export const run = (
               },
             })
             runningWorkers.set(task.id, created.id)
-            yield* Effect.gen(function* () {
+            const messages = yield* Effect.gen(function* () {
               yield* sessions.prompt({ sessionID: created.id, prompt: taskPrompt(task, context, projectMemory) })
               // prompt() wakes execution; resume() joins the same keyed runner when it is already active.
               yield* sessions.resume(created.id)
-              const messages = yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
-              return messages
+              return yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
             }).pipe(
               Effect.ensuring(Effect.sync(() => runningWorkers.delete(task.id))),
             )
