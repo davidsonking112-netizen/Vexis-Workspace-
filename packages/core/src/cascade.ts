@@ -124,7 +124,7 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
     const executeTask = (task: Task) =>
       Effect.gen(function* () {
         runningTasks.add(task.id)
-        return yield* Effect.gen(function* () {
+        const result = yield* Effect.gen(function* () {
           const maxAttempts = Math.max(1, (task.retries ?? 0) + 1)
           for (let attempt = 1; attempt <= maxAttempts; attempt++) {
             yield* emit({ type: "cascade.task.started", taskID: task.id, attempt })
@@ -144,9 +144,9 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
             return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: attempt, error: outcome.error }
           }
           return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: maxAttempts, error: new Error("Cascade task exhausted retries") }
-        }).pipe(
-          Effect.ensuring(Effect.sync(() => runningTasks.delete(task.id))),
-        )
+        })
+        runningTasks.delete(task.id)
+        return result
       })
 
     try {
