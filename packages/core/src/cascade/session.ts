@@ -217,6 +217,28 @@ export const run = (
     const hasMutatingTasks = missionTasks.some((task) => task.mutatesWorkspace)
     const concurrency = hasBaseChanges || hasMutatingTasks ? 1 : input.concurrency
 
+    // A linked mutating task must observe changes produced by mutating ancestors.
+    // Worktrees are created from HEAD, so isolating such a task would silently
+    // discard the upstream working-tree state. Keep those dependent mutations in
+    // the shared checkout; independent mutations can still use isolated worktrees
+    // and will apply cleanly against the base checkout when they do not overlap.
+    const missionTaskMap = new Map(missionTasks.map((task) => [task.id, task]))
+    const mutatingTaskIDs = new Set(missionTasks.filter((task) => task.mutatesWorkspace).map((task) => task.id))
+    const mutationDependencyCache = new Map<string, boolean>()
+    const hasMutatingDependency = (taskID: string, visiting = new Set<string>()): boolean => {
+      const cached = mutationDependencyCache.get(taskID)
+      if (cached !== undefined) return cached
+      if (visiting.has(taskID)) return false
+      visiting.add(taskID)
+      const task = missionTaskMap.get(taskID)
+      const result = task?.dependsOn?.some((dependency) =>
+        mutatingTaskIDs.has(dependency) || hasMutatingDependency(dependency, new Set(visiting)),
+      ) ?? false
+      visiting.delete(taskID)
+      mutationDependencyCache.set(taskID, result)
+      return result
+    }
+
     const publish = (event: Cascade.Event) =>
       parentSessionID
         ? Effect.gen(function* () {
@@ -270,7 +292,12 @@ export const run = (
     const runTask = (task: Task, context: ReadonlyMap<string, unknown>) =>
       Effect.acquireUseRelease(
         Effect.gen(function* () {
-          const shouldIsolate = Boolean(task.mutatesWorkspace && baseRepo && !hasBaseChanges)
+          const shouldIsolate = Boolean(
+            task.mutatesWorkspace &&
+              baseRepo &&
+              !hasBaseChanges &&
+              !hasMutatingDependency(task.id),
+          )
           if (!shouldIsolate) return { workspace: input.location.directory, repository: baseRepo, isolated: false }
 
           const workspace = path.join(
