@@ -46,12 +46,12 @@ export type ProjectResult = {
 export type ResumeState = ProjectResult
 export type Plan = { readonly tasks: readonly Task[]; readonly capabilities?: readonly Capability[] }
 export type Event =
-  | { readonly type: "cascade.started"; readonly taskCount: number }
+  | { readonly type: "cascade.started"; readonly taskCount: number; readonly tasks?: readonly Omit<Task, "run">[] }
   | { readonly type: "cascade.resumed"; readonly completedCount: number }
   | { readonly type: "cascade.task.started"; readonly taskID: TaskID; readonly attempt: number }
   | { readonly type: "cascade.task.retrying"; readonly taskID: TaskID; readonly attempt: number; readonly error: unknown }
   | { readonly type: "cascade.task.artifact"; readonly taskID: TaskID; readonly key: string; readonly kind?: Artifact["kind"] }
-  | { readonly type: "cascade.task.completed"; readonly taskID: TaskID; readonly artifactCount: number; readonly attempts: number }
+  | { readonly type: "cascade.task.completed"; readonly taskID: TaskID; readonly artifactCount: number; readonly attempts: number; readonly artifacts: readonly Artifact[] }
   | { readonly type: "cascade.task.failed"; readonly taskID: TaskID; readonly error: unknown; readonly attempts: number }
   | { readonly type: "cascade.task.cancelled"; readonly taskID: TaskID; readonly reason: string }
   | { readonly type: "cascade.cancelled"; readonly reason: string }
@@ -109,8 +109,12 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
     }
 
     const emit = (event: Event) => options.onEvent ? options.onEvent(event) : Effect.void
-    yield* emit({ type: options.resume ? "cascade.resumed" : "cascade.started", ...(options.resume ? { completedCount: results.size } : { taskCount: tasks.size }) } as Event)
-    if (options.resume) yield* emit({ type: "cascade.started", taskCount: tasks.size })
+    if (options.resume) yield* emit({ type: "cascade.resumed", completedCount: results.size })
+    yield* emit({
+      type: "cascade.started",
+      taskCount: tasks.size,
+      tasks: [...tasks.values()].map(({ run: _run, ...task }) => task),
+    })
 
     const executeTask = (task: Task) =>
       Effect.gen(function* () {
@@ -169,7 +173,7 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
               artifacts.set(artifact.key, artifact.value)
               yield* emit({ type: "cascade.task.artifact", taskID: task.id, key: artifact.key, kind: artifact.kind })
             }
-            yield* emit({ type: "cascade.task.completed", taskID: task.id, artifactCount: result.artifacts.length, attempts: result.attempts })
+            yield* emit({ type: "cascade.task.completed", taskID: task.id, artifactCount: result.artifacts.length, attempts: result.attempts, artifacts: result.artifacts })
           } else {
             yield* emit({ type: "cascade.task.failed", taskID: task.id, error: result.error, attempts: result.attempts })
           }
