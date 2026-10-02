@@ -3,6 +3,10 @@ import { httpClient } from "@vexis/core/effect/app-node-platform"
 import { Ripgrep } from "@vexis/core/ripgrep"
 import { PlanExitTool } from "./plan"
 import { Session } from "@/session/session"
+import { SessionV2 } from "@vexis/core/session"
+import { Git } from "@/git"
+import { Global } from "@vexis/core/global"
+import { ProjectMemory } from "@vexis/core/project/memory"
 import { QuestionTool } from "./question"
 import { ShellTool } from "./shell"
 import { EditTool } from "./edit"
@@ -448,6 +452,10 @@ export const node = LayerNode.make({
     Agent.node,
     Skill.node,
     Session.node,
+    SessionV2.node,
+    Git.node,
+    Global.node,
+    ProjectMemory.node,
     BackgroundJob.node,
     Provider.node,
     LSP.node,
