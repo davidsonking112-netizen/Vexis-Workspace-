@@ -1,4 +1,4 @@
-import { For, Show, createMemo, createResource, createSignal, onCleanup } from "solid-js"
+import { For, Show, createMemo, createResource, createSignal, onCleanup, onMount } from "solid-js"
 import { Icon } from "@vexis/ui/icon"
 import { useParams } from "@solidjs/router"
 import { useServerSDK } from "@/context/server-sdk"
@@ -82,6 +82,7 @@ export function CascadePanel() {
   const sdk = useServerSDK()
   const [open, setOpen] = createSignal(false)
   const [busy, setBusy] = createSignal<"resume" | "cancel" | undefined>()
+  const [liveEvents, setLiveEvents] = createSignal<CascadeEvent[]>([])
 
   const graph = createMemo(() => {
     const info = sync().session.data.info
@@ -112,12 +113,26 @@ export function CascadePanel() {
     },
   )
 
-  const refreshTimer = setInterval(() => {
-    if (open()) void refetch()
-  }, 1500)
-  onCleanup(() => clearInterval(refreshTimer))
+  onMount(() => {
+    const stop = sdk().event.listen((event) => {
+      if (!event.type.startsWith("session.next.cascade.")) return
+      const properties = event.properties as CascadeEvent["data"]
+      if (properties.sessionID !== graph()?.root.id) return
+      setLiveEvents((current) => {
+        if (current.some((item) => item.id === event.id)) return current
+        return [...current, { id: event.id, type: event.type, data: properties }]
+      })
+    })
+    onCleanup(stop)
+  })
 
-  const events = createMemo(() => history() ?? [])
+  const events = createMemo(() => {
+    const persisted = history() ?? []
+    const merged = new Map<string, CascadeEvent>()
+    for (const event of persisted) merged.set(event.id, event)
+    for (const event of liveEvents()) merged.set(event.id, event)
+    return [...merged.values()]
+  })
   const mission = createMemo(() => {
     const items = events()
     const started = items.toReversed().find((event) => event.type === "session.next.cascade.started")
