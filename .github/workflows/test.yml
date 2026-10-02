@@ -11,7 +11,9 @@ concurrency:
   # Serialize runs for the same branch/PR. Do not use run_id for dev:
   # run_id is unique per run and would defeat the concurrency group.
   group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-dev', github.workflow), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
-  cancel-in-progress: false
+  # Keep every dev push validated in order, but cancel superseded PR runs
+  # so stale revisions cannot block verification of the current head.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
