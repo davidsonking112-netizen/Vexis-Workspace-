@@ -42,6 +42,8 @@ export type TaskResult = {
 export type ProjectResult = {
   readonly results: ReadonlyMap<TaskID, TaskResult>
   readonly artifacts: ReadonlyMap<string, unknown>
+  /** Effective scheduler concurrency after orchestration safety limits. */
+  readonly concurrency?: number
 }
 export type ResumeState = ProjectResult
 export type Plan = { readonly tasks: readonly Task[]; readonly capabilities?: readonly Capability[] }
@@ -141,7 +143,13 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
           return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: attempt, error: outcome.error }
         }
         return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: maxAttempts, error: new Error("Cascade task exhausted retries") }
-      })
+      }).pipe(
+        Effect.onInterrupt(() => emit({
+          type: "cascade.task.cancelled",
+          taskID: task.id,
+          reason: "interrupted",
+        })),
+      )
 
     try {
       while (results.size < tasks.size) {
@@ -184,7 +192,7 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
         }
       }
       yield* emit({ type: "cascade.completed", results })
-      return { results, artifacts }
+      return { results, artifacts, concurrency }
     } catch (error) {
       const reason = errorMessage(error)
       yield* emit({ type: "cascade.cancelled", reason })
