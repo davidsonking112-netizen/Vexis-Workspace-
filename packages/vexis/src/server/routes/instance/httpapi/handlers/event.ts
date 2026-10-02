@@ -9,11 +9,11 @@ import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { EventApi } from "../groups/event"
 
-function eventData(data: unknown): Sse.Event {
+function eventData(data: { id?: string; type: string; properties: unknown }): Sse.Event {
   return {
     _tag: "Event",
     event: "message",
-    id: undefined,
+    id: data.id,
     data: JSON.stringify(data),
   }
 }
