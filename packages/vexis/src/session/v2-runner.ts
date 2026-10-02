@@ -1,5 +1,6 @@
 import { Database } from "@vexis/core/database/database"
 import { EventV2 } from "@vexis/core/event"
+import { Git } from "@vexis/core/git"
 import { SessionInput } from "@vexis/core/session/input"
 import { SessionRunner } from "@vexis/core/session/runner"
 import { SessionStore } from "@vexis/core/session/store"
@@ -15,6 +16,7 @@ const layer = Effect.gen(function* () {
   const database = yield* Database.Service
   const events = yield* EventV2.Service
   const instances = yield* InstanceStore.Service
+  const git = yield* Git.Service
   const projects = yield* Project.Service
   const prompt = yield* SessionPrompt.Service
 
@@ -42,9 +44,12 @@ const layer = Effect.gen(function* () {
             : Effect.die(new Error(`Project not found: ${session.projectID}`)),
         ),
       )
+    const repository = yield* git.repo.discover(session.directory).pipe(
+      Effect.catchAllCause(() => Effect.succeed(undefined)),
+    )
     const instance = yield* instances.load({
       directory: session.directory,
-      worktree: session.directory,
+      worktree: repository?.worktree ?? project.worktree,
       project,
     })
 
@@ -68,6 +73,7 @@ export const node = LayerNode.make({
     EventV2.node,
     SessionStore.node,
     InstanceStore.node,
+    Git.node,
     Project.node,
     SessionPrompt.node,
   ],
