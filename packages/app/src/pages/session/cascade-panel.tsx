@@ -109,11 +109,15 @@ export function CascadePanel() {
     return { root, tasks }
   })
 
+  let liveSessionID: string | undefined
   const [history, { refetch }] = createResource(
     () => (open() ? graph()?.root.id : undefined),
     async (sessionID) => {
       if (!sessionID) return [] as CascadeEvent[]
-      setLiveEvents([])
+      if (liveSessionID !== sessionID) {
+        liveSessionID = sessionID
+        setLiveEvents([])
+      }
       const events: CascadeEvent[] = []
       let after: number | undefined
       while (true) {
