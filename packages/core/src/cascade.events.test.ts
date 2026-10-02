@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { run } from "./cascade"
 
 describe("Cascade events", () => {
@@ -49,4 +49,28 @@ describe("Cascade events", () => {
 
     expect(result.results.get("safe")?.state).toBe("completed")
   })
+
+  test("reports interrupted tasks before the cascade cancellation event", async () => {
+    const events: string[] = []
+    const fiber = Effect.runFork(
+      run(
+        {
+          tasks: [{ id: "slow", run: () => Effect.never }],
+        },
+        {
+          onEvent: (event) =>
+            Effect.sync(() => {
+              events.push(event.type)
+            }),
+        },
+      ),
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    await Effect.runPromise(Fiber.interrupt(fiber))
+
+    expect(events).toContain("cascade.task.cancelled")
+    expect(events.at(-1)).toBe("cascade.cancelled")
+  })
+
 })
