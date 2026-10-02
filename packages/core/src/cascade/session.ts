@@ -153,35 +153,17 @@ export const run = (
     }))
     const resumeFromHistory = cascadeHistory
       ? {
+          // Recovery is checkpoint-based: only durable completion is safe to skip.
+          // Failed/cancelled tasks must remain runnable so an explicit resume can retry them.
           results: new Map<string, Cascade.TaskResult>(
             cascadeHistory.flatMap((event) => {
-              if (event.type === "session.next.cascade.task.completed") {
-                return [[event.data.taskID, {
-                  id: event.data.taskID,
-                  state: "completed" as const,
-                  artifacts: event.data.artifacts,
-                  attempts: event.data.attempts,
-                }]]
-              }
-              if (event.type === "session.next.cascade.task.failed") {
-                return [[event.data.taskID, {
-                  id: event.data.taskID,
-                  state: "failed" as const,
-                  artifacts: [],
-                  attempts: event.data.attempts,
-                  error: event.data.error,
-                }]]
-              }
-              if (event.type === "session.next.cascade.task.cancelled") {
-                return [[event.data.taskID, {
-                  id: event.data.taskID,
-                  state: "cancelled" as const,
-                  artifacts: [],
-                  attempts: 0,
-                  error: event.data.reason,
-                }]]
-              }
-              return []
+              if (event.type !== "session.next.cascade.task.completed") return []
+              return [[event.data.taskID, {
+                id: event.data.taskID,
+                state: "completed" as const,
+                artifacts: event.data.artifacts,
+                attempts: event.data.attempts,
+              }]]
             }),
           ),
           artifacts: new Map<string, unknown>(
