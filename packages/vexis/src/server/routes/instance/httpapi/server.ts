@@ -3,6 +3,9 @@ import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpClient, HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@vexis/core/fs-util"
+import { Global } from "@vexis/core/global"
+import { Git as GitV2 } from "@vexis/core/git"
+import { ProjectMemory } from "@vexis/core/project/memory"
 import * as Observability from "@vexis/core/observability"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
@@ -65,6 +68,7 @@ import { Ripgrep } from "@vexis/core/ripgrep"
 import { SessionProjector } from "@vexis/core/session/projector"
 import { SessionV2 } from "@vexis/core/session"
 import { SessionExecution } from "@vexis/core/session/execution"
+import { V2SessionRunner } from "@/session/v2-runner"
 import * as SessionExecutionLocal from "@vexis/core/session/execution/local"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@vexis/server/cors"
@@ -213,6 +217,9 @@ const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
   Database.node,
+  Global.node,
+  GitV2.node,
+  ProjectMemory.node,
   Auth.node,
   Account.node,
   Config.node,
@@ -233,6 +240,7 @@ const app = LayerNode.group([
   PermissionSaved.node,
   Todo.node,
   Session.node,
+  V2SessionRunner.node,
   SessionProjector.node,
   SessionStatus.node,
   BackgroundJob.node,
