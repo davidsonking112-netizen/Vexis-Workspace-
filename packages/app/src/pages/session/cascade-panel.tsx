@@ -111,14 +111,18 @@ export function CascadePanel() {
       const events: CascadeEvent[] = []
       let after: number | undefined
       while (true) {
-        const result = await sdk().api.session.history({
+        const result = await sdk().client.session.history({
           sessionID,
-          query: { limit: 100, ...(after === undefined ? {} : { after }) },
+          limit: 100,
+          ...(after === undefined ? {} : { after }),
         })
-        const page = result.data as unknown as CascadeEvent[]
-        events.push(...page)
-        if (!result.hasMore) break
-        const last = page.at(-1) as (CascadeEvent & { durable?: { seq?: number } }) | undefined
+        const page = result.data
+        const cascadePage = page.data
+          .filter((event) => event.type.startsWith("session.next.cascade."))
+          .map((event) => ({ id: event.id, type: event.type, data: event.data }))
+        events.push(...cascadePage as CascadeEvent[])
+        if (!page.hasMore) break
+        const last = page.data.at(-1)
         const next = last?.durable?.seq
         if (next === undefined || (after !== undefined && next <= after)) {
           throw new Error("Cascade history pagination did not advance")
@@ -130,7 +134,8 @@ export function CascadePanel() {
   )
 
   onMount(() => {
-    const stop = sdk().event.listen((event) => {
+    const stop = sdk().event.listen((entry) => {
+      const event = entry.details
       if (event.type === "server.connected") {
         if (open() && graph()?.root.id) void refetch()
         return
@@ -202,8 +207,8 @@ export function CascadePanel() {
     if (!sessionID) return
     setBusy(kind)
     try {
-      if (kind === "resume") await sdk().api.cascade.resume({ sessionID })
-      else await sdk().api.cascade.cancel({ sessionID })
+      if (kind === "resume") await sdk().cascade.resume(sessionID)
+      else await sdk().cascade.cancel(sessionID)
       await refetch()
     } finally {
       setBusy()
@@ -215,12 +220,12 @@ export function CascadePanel() {
       <div class="absolute top-3 end-3 z-30">
         <Show when={open()} fallback={
           <button type="button" class="h-9 px-3 rounded-md border border-border-base bg-background-stronger text-12-medium text-text-base shadow-lg flex items-center gap-2" onClick={() => setOpen(true)}>
-            <Icon name="models" size="14" /> Agents <span class="text-text-weak">{mission()?.tasks.length ?? graph()?.tasks.length ?? 0}</span>
+            <Icon name="models" size="small" /> Agents <span class="text-text-weak">{mission()?.tasks.length ?? graph()?.tasks.length ?? 0}</span>
           </button>
         }>
           <div class="w-[520px] max-h-[82vh] overflow-hidden rounded-xl border border-border-base bg-background-base shadow-2xl">
             <div class="px-4 py-3 border-b border-border-weaker-base flex items-center gap-3">
-              <div class="size-8 rounded-lg bg-background-stronger flex items-center justify-center"><Icon name="models" size="16" /></div>
+              <div class="size-8 rounded-lg bg-background-stronger flex items-center justify-center"><Icon name="models" size="normal" /></div>
               <div class="min-w-0 flex-1">
                 <div class="text-13-medium text-text-base">Vexis Mission</div>
                 <div class="text-11-regular text-text-weak">{mission()?.completedCount ?? 0}/{mission()?.tasks.length ?? 0} tasks completed</div>
@@ -229,7 +234,7 @@ export function CascadePanel() {
               <Show when={!mission()?.runningCount && mission()?.failedCount}><span class="text-10-medium text-icon-error">FAILED</span></Show>
               <Show when={mission()?.completed && !mission()?.runningCount}><span class="text-10-medium text-icon-success">COMPLETE</span></Show>
               <button type="button" class="size-7 rounded hover:bg-background-stronger flex items-center justify-center" onClick={() => setOpen(false)} aria-label="Close Mission panel">
-                <Icon name="xmark-small" size="14" />
+                <Icon name="close-small" size="small" />
               </button>
             </div>
 
@@ -307,7 +312,7 @@ export function CascadePanel() {
                     <For each={artifacts()}>
                       {(artifact) => (
                         <div class="px-3 py-2 rounded-md bg-background-stronger border border-border-weaker-base flex items-center gap-2">
-                          <Icon name="file" size="13" />
+                          <Icon name="open-file" size="small" />
                           <span class="text-11-medium text-text-base truncate">{artifact.label ?? artifact.key}</span>
                           <span class="ms-auto text-10-regular text-text-faint">{artifact.kind ?? "result"}</span>
                         </div>
