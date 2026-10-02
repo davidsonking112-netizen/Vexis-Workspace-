@@ -108,8 +108,24 @@ export function CascadePanel() {
     () => (open() ? graph()?.root.id : undefined),
     async (sessionID) => {
       if (!sessionID) return [] as CascadeEvent[]
-      const result = await sdk().api.session.history({ sessionID, query: { limit: 100 } })
-      return (result.data as unknown as CascadeEvent[]).filter((event) => event.type.startsWith("session.next.cascade."))
+      const events: CascadeEvent[] = []
+      let after: number | undefined
+      while (true) {
+        const result = await sdk().api.session.history({
+          sessionID,
+          query: { limit: 100, ...(after === undefined ? {} : { after }) },
+        })
+        const page = result.data as unknown as CascadeEvent[]
+        events.push(...page)
+        if (!result.hasMore) break
+        const last = page.at(-1) as (CascadeEvent & { durable?: { seq?: number } }) | undefined
+        const next = last?.durable?.seq
+        if (next === undefined || (after !== undefined && next <= after)) {
+          throw new Error("Cascade history pagination did not advance")
+        }
+        after = next
+      }
+      return events.filter((event) => event.type.startsWith("session.next.cascade."))
     },
   )
 
