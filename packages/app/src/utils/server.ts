@@ -60,3 +60,54 @@ export function createApiForServer(input: {
 }
 
 export type ServerApi = OpenCodeClient
+
+export type CascadeApi = {
+  readonly resume: (sessionID: string) => Promise<{
+    data: {
+      sessions: Record<string, string>
+      artifacts: Record<string, unknown>
+    }
+  }>
+  readonly cancel: (sessionID: string) => Promise<{ data: { cancelled: boolean } }>
+}
+
+export function createCascadeApiForServer(input: {
+  server: ServerConnection.HttpBase
+  fetch?: typeof globalThis.fetch
+}): CascadeApi {
+  const request = input.fetch ?? globalThis.fetch
+  const headers = input.server.password
+    ? {
+        Authorization: `Basic ${authTokenFromCredentials({
+          username: input.server.username,
+          password: input.server.password,
+        })}`,
+      }
+    : undefined
+
+  const call = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const response = await request(new URL(path, input.server.url), {
+      ...init,
+      headers: {
+        ...headers,
+        ...init?.headers,
+      },
+    })
+    if (response.ok) return (await response.json()) as T
+    const message = await response.text().catch(() => "")
+    throw new Error(message || `Cascade request failed with HTTP ${response.status}`)
+  }
+
+  return {
+    resume: (sessionID) =>
+      call({
+        path: `/api/cascade/${encodeURIComponent(sessionID)}/resume`,
+        method: "POST",
+      } as never),
+    cancel: (sessionID) =>
+      call({
+        path: `/api/cascade/${encodeURIComponent(sessionID)}/cancel`,
+        method: "POST",
+      } as never),
+  }
+}
