@@ -1,3 +1,6 @@
+import { Database } from "@vexis/core/database/database"
+import { EventV2 } from "@vexis/core/event"
+import { SessionInput } from "@vexis/core/session/input"
 import { SessionRunner } from "@vexis/core/session/runner"
 import { SessionStore } from "@vexis/core/session/store"
 import { LayerNode } from "@vexis/core/effect/layer-node"
@@ -9,6 +12,8 @@ import { LoopInput, Service as SessionPrompt } from "./prompt"
 
 const layer = Effect.gen(function* () {
   const store = yield* SessionStore.Service
+  const database = yield* Database.Service
+  const events = yield* EventV2.Service
   const instances = yield* InstanceStore.Service
   const projects = yield* Project.Service
   const prompt = yield* SessionPrompt.Service
@@ -16,6 +21,12 @@ const layer = Effect.gen(function* () {
   const run = Effect.fn("V2SessionRunner.run")(function* (input: Parameters<SessionRunner.Interface["run"]>[0]) {
     const session = yield* store.get(input.sessionID)
     if (!session) return yield* Effect.die(new Error(`Session not found: ${input.sessionID}`))
+
+    // V2 admission records pending input first. Promote everything admitted
+    // before this runner snapshot into the native message projection so the
+    // existing Vexis/OpenCode prompt loop consumes the same durable input.
+    const cutoff = yield* EventV2.latestSequence(database.db, input.sessionID)
+    yield* SessionInput.promoteSteers(database.db, events, input.sessionID, cutoff)
 
     const current = yield* InstanceRef
     if (current?.directory === session.directory) {
@@ -52,7 +63,14 @@ const layer = Effect.gen(function* () {
 export const node = LayerNode.make({
   service: SessionRunner.Service,
   layer,
-  deps: [SessionStore.node, InstanceStore.node, Project.node, SessionPrompt.node],
+  deps: [
+    Database.node,
+    EventV2.node,
+    SessionStore.node,
+    InstanceStore.node,
+    Project.node,
+    SessionPrompt.node,
+  ],
 })
 
 export * as V2SessionRunner from "./v2-runner"
