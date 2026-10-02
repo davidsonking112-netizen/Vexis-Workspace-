@@ -69,7 +69,8 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 
 export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectResult, Error> =>
   Effect.gen(function* () {
-    const concurrency = Math.max(1, options.concurrency ?? 4)
+    const requestedConcurrency = options.concurrency ?? 4
+    const concurrency = Number.isFinite(requestedConcurrency) ? Math.max(1, Math.floor(requestedConcurrency)) : 4
     const capabilityList = [...(options.capabilities ?? []), ...(plan.capabilities ?? [])]
     const capabilities = new Map(capabilityList.map((capability) => [capability.id, capability]))
     const tasks = new Map<TaskID, Task>()
