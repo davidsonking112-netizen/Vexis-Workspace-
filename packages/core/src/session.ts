@@ -424,7 +424,11 @@ const layer = Layer.effect(
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
         yield* result.get(sessionID)
-        return yield* new OperationUnavailableError({ operation: "wait" })
+        // V2 prompt admission wakes the local execution coordinator. Reusing
+        // resume here joins that execution when it is already active, and
+        // starts it when a wake raced with the caller. This keeps wait a true
+        // "run to completion" operation without duplicating the runner.
+        yield* execution.resume(sessionID)
       }),
       active: execution.active,
       resume: Effect.fn("V2Session.resume")(function* (sessionID) {
