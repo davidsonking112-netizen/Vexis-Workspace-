@@ -2,15 +2,24 @@ import { CascadeSession } from "@vexis/core/cascade"
 import { plan } from "@vexis/core/cascade/planner"
 import { Location } from "@vexis/core/location"
 import { ProjectMemory } from "@vexis/core/project/memory"
+import { PositiveInt } from "@vexis/core/schema"
 import { Effect, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import * as Tool from "./tool"
 
 export const Parameters = Schema.Struct({
   request: Schema.String,
-  concurrency: Schema.optional(Schema.Number),
+  concurrency: Schema.optional(PositiveInt),
   synthesis: Schema.optional(Schema.Boolean),
 })
+
+const xmlEscape = (value: unknown) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&apos;")
 
 export const MissionTool = Tool.define(
   "mission",
@@ -59,11 +68,11 @@ export const MissionTool = Tool.define(
           const graph = mission.tasks.map((task) => {
             const dependencies = task.dependsOn?.length ? task.dependsOn.join(", ") : "none"
             return [
-              `- ${task.id}: ${task.title ?? task.id}`,
-              `role=${task.role ?? "unspecified"}`,
-              `agent=${task.agent ?? "default"}`,
+              `- ${xmlEscape(task.id)}: ${xmlEscape(task.title ?? task.id)}`,
+              `role=${xmlEscape(task.role ?? "unspecified")}`,
+              `agent=${xmlEscape(task.agent ?? "default")}`,
               `mutates=${task.mutatesWorkspace ? "yes" : "no"}`,
-              `depends on: ${dependencies}`,
+              `depends on: ${xmlEscape(dependencies)}`,
             ].join(" | ")
           }).join("\n")
 
@@ -72,10 +81,10 @@ export const MissionTool = Tool.define(
               sessionID?: string; output?: string; role?: string; isolated?: boolean; workspace?: string; changeSet?: string
             } | undefined
             return [
-              `<task id="${item.id}" state="${item.state}"${artifact?.sessionID ? ` session_id="${artifact.sessionID}"` : ""} role="${artifact?.role ?? "unknown"}" isolated="${artifact?.isolated ? "true" : "false"}">`,
-              artifact?.workspace ? `<workspace>${artifact.workspace}</workspace>` : "",
+              `<task id="${xmlEscape(item.id)}" state="${xmlEscape(item.state)}"${artifact?.sessionID ? ` session_id="${xmlEscape(artifact.sessionID)}"` : ""} role="${xmlEscape(artifact?.role ?? "unknown")}" isolated="${artifact?.isolated ? "true" : "false"}">`,
+              artifact?.workspace ? `<workspace>${xmlEscape(artifact.workspace)}</workspace>` : "",
               artifact?.changeSet ? "<artifact kind=\"change\" available=\"true\" />" : "",
-              artifact?.output ?? (item.error ? String(item.error) : ""),
+              xmlEscape(artifact?.output ?? (item.error ? String(item.error) : "")),
               "</task>",
             ].join("\n")
           }).join("\n")
@@ -84,7 +93,7 @@ export const MissionTool = Tool.define(
             title: `Mission: ${params.request.slice(0, 72)}`,
             metadata: {
               taskCount: mission.tasks.length,
-              concurrency: params.concurrency ?? 4,
+              concurrency: result.concurrency ?? params.concurrency ?? 4,
               artifactFirst: true,
               gitAware: true,
               graph: mission.tasks.map((task) => ({
