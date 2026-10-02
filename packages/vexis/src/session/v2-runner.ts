@@ -27,8 +27,7 @@ const layer = Effect.gen(function* () {
     // V2 admission records pending input first. Promote everything admitted
     // before this runner snapshot into the native message projection so the
     // existing Vexis/OpenCode prompt loop consumes the same durable input.
-    const cutoff = yield* EventV2.latestSequence(database.db, input.sessionID)
-    yield* SessionInput.promoteSteers(database.db, events, input.sessionID, cutoff)
+    yield* SessionInput.promoteSteers(database.db, events, input.sessionID, Number.MAX_SAFE_INTEGER)
 
     const current = yield* InstanceRef
     if (current?.directory === session.directory) {
