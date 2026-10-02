@@ -15,6 +15,11 @@ type CascadeMetadata = {
 type CascadeEvent = {
   id: string
   type: string
+  durable?: {
+    seq?: number
+    aggregateID?: string
+    version?: number
+  }
   data: {
     timestamp?: unknown
     sessionID: string
@@ -108,8 +113,27 @@ export function CascadePanel() {
     () => (open() ? graph()?.root.id : undefined),
     async (sessionID) => {
       if (!sessionID) return [] as CascadeEvent[]
-      const result = await sdk().api.session.history({ sessionID, query: { limit: 100 } })
-      return (result.data as unknown as CascadeEvent[]).filter((event) => event.type.startsWith("session.next.cascade."))
+      setLiveEvents([])
+      const events: CascadeEvent[] = []
+      let after: number | undefined
+      while (true) {
+        const page = await sdk().api.session.history({
+          sessionID,
+          query: after === undefined ? { limit: 100 } : { limit: 100, after },
+        })
+        events.push(
+          ...(page.data as unknown as CascadeEvent[]).filter((event) =>
+            event.type.startsWith("session.next.cascade."),
+          ),
+        )
+        if (!page.hasMore) return events
+        const raw = page.data as unknown as Array<CascadeEvent & { durable?: { seq?: number } }>
+        const next = raw.at(-1)?.durable?.seq
+        if (typeof next !== "number" || next <= (after ?? -1)) {
+          throw new Error("Cascade history pagination did not advance")
+        }
+        after = next
+      }
     },
   )
 
