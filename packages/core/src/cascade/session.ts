@@ -109,11 +109,24 @@ export const run = (
     const projectMemory = yield* memory.context(input.location.directory)
     const parentSessionID = input.parentSessionID ?? input.resumeSessionID
     const history = input.resumeSessionID
-      ? yield* sessions.history({ sessionID: Session.ID.make(input.resumeSessionID), after: undefined, limit: 100 }).pipe(
-          Effect.catch(() => Effect.succeed({ events: [], hasMore: false })),
-        )
+      ? yield* Effect.gen(function* () {
+          const sessionID = Session.ID.make(input.resumeSessionID!)
+          const events: SessionEvent.DurableEvent[] = []
+          let after: number | undefined
+          for (let page = 0; page < 100; page++) {
+            const next = yield* sessions.history({ sessionID, after, limit: 100 }).pipe(
+              Effect.catch(() => Effect.succeed({ events: [] as SessionEvent.DurableEvent[], hasMore: false })),
+            )
+            events.push(...next.events)
+            if (!next.hasMore) break
+            const last = next.events.at(-1)
+            if (!last?.durable) break
+            after = last.durable.seq
+          }
+          return events
+        })
       : undefined
-    const cascadeHistory = history?.events.filter((event): event is SessionEvent.DurableEvent =>
+    const cascadeHistory = history?.filter((event): event is SessionEvent.DurableEvent =>
       event.type.startsWith("session.next.cascade."),
     )
     const started = cascadeHistory?.toReversed().find((event): event is SessionEvent.Cascade.Started =>
