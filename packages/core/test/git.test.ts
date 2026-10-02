@@ -146,6 +146,9 @@ describe("Git trees", () => {
         RelativePath.make("scope/tracked.txt"),
       ])
       const diffs = yield* git.tree.diff({ repository, from: before, to: after, context: 1 })
+      const patch = yield* git.tree.patch({ repository, from: before, to: after })
+      expect(patch).toContain("diff --git a/scope/added.txt b/scope/added.txt")
+      expect(patch).toContain("diff --git a/scope/tracked.txt b/scope/tracked.txt")
       expect(diffs.map((item) => [item.path, item.status])).toEqual([
         [RelativePath.make("scope/added.txt"), "added"],
         [RelativePath.make("scope/tracked.txt"), "modified"],
