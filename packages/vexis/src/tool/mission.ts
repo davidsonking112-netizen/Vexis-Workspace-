@@ -2,15 +2,19 @@ import { CascadeSession } from "@vexis/core/cascade"
 import { plan } from "@vexis/core/cascade/planner"
 import { Location } from "@vexis/core/location"
 import { ProjectMemory } from "@vexis/core/project/memory"
+import { PositiveInt } from "@vexis/core/schema"
 import { Effect, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
 import * as Tool from "./tool"
 
 export const Parameters = Schema.Struct({
   request: Schema.String,
-  concurrency: Schema.optional(Schema.Number),
+  concurrency: Schema.optional(PositiveInt),
   synthesis: Schema.optional(Schema.Boolean),
 })
+
+const escapeXml = (value: string) =>
+  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&apos;")
 
 export const MissionTool = Tool.define(
   "mission",
@@ -72,10 +76,10 @@ export const MissionTool = Tool.define(
               sessionID?: string; output?: string; role?: string; isolated?: boolean; workspace?: string; changeSet?: string
             } | undefined
             return [
-              `<task id="${item.id}" state="${item.state}"${artifact?.sessionID ? ` session_id="${artifact.sessionID}"` : ""} role="${artifact?.role ?? "unknown"}" isolated="${artifact?.isolated ? "true" : "false"}">`,
-              artifact?.workspace ? `<workspace>${artifact.workspace}</workspace>` : "",
+              `<task id="${escapeXml(item.id)}" state="${escapeXml(item.state)}"${artifact?.sessionID ? ` session_id="${escapeXml(artifact.sessionID)}"` : ""} role="${escapeXml(artifact?.role ?? "unknown")}" isolated="${artifact?.isolated ? "true" : "false"}">`,
+              artifact?.workspace ? `<workspace>${escapeXml(artifact.workspace)}</workspace>` : "",
               artifact?.changeSet ? "<artifact kind=\"change\" available=\"true\" />" : "",
-              artifact?.output ?? (item.error ? String(item.error) : ""),
+              artifact?.output ? escapeXml(artifact.output) : item.error ? escapeXml(String(item.error)) : "",
               "</task>",
             ].join("\n")
           }).join("\n")
@@ -84,7 +88,7 @@ export const MissionTool = Tool.define(
             title: `Mission: ${params.request.slice(0, 72)}`,
             metadata: {
               taskCount: mission.tasks.length,
-              concurrency: params.concurrency ?? 4,
+              concurrency: result.concurrency,
               artifactFirst: true,
               gitAware: true,
               graph: mission.tasks.map((task) => ({
