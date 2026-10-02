@@ -131,6 +131,10 @@ export function CascadePanel() {
 
   onMount(() => {
     const stop = sdk().event.listen((event) => {
+      if (event.type === "server.connected") {
+        if (open() && graph()?.root.id) void refetch()
+        return
+      }
       if (!event.type.startsWith("session.next.cascade.")) return
       const properties = event.properties as CascadeEvent["data"]
       if (properties.sessionID !== graph()?.root.id) return
