@@ -108,7 +108,11 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
       for (const [key, value] of options.resume.artifacts) artifacts.set(key, value)
     }
 
-    const emit = (event: Event) => options.onEvent ? options.onEvent(event) : Effect.void
+    // Lifecycle observers are telemetry/UI integrations. A broken observer must never abort the mission.
+    const emit = (event: Event) =>
+      (options.onEvent ? options.onEvent(event) : Effect.void).pipe(
+        Effect.catchAllCause(() => Effect.void),
+      )
     if (options.resume) yield* emit({ type: "cascade.resumed", completedCount: results.size })
     yield* emit({
       type: "cascade.started",
