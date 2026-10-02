@@ -24,6 +24,7 @@ import { Todo } from "@/session/todo"
 import { Session } from "@/session/session"
 import { SessionV2 } from "@vexis/core/session"
 import * as SessionExecutionLocal from "@vexis/core/session/execution/local"
+import { SessionExecution } from "@vexis/core/session/execution"
 import { Global } from "@vexis/core/global"
 import { ProjectMemory } from "@vexis/core/project/memory"
 import { SessionStatus } from "@/session/status"
@@ -81,7 +82,6 @@ export const AppLayer = AppNodeBuilderV1.build(
     Permission.node,
     Todo.node,
     Session.node,
-    SessionExecutionLocal.node,
     SessionV2.node,
     ProjectMemory.node,
     Global.node,
@@ -113,7 +113,8 @@ export const AppLayer = AppNodeBuilderV1.build(
     Installation.node,
     ShareNext.node,
     SessionShare.node,
-  ]), [[SessionV2ExecutionNode, SessionExecutionLocal.node]],
+  ]),
+  [[SessionExecution.node, SessionExecutionLocal.node]],
 ).pipe(Layer.provideMerge(AppNodeBuilderV1.build(Ripgrep.node)), Layer.provideMerge(Observability.layer))
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })
