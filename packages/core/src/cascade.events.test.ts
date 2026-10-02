@@ -32,4 +32,21 @@ describe("Cascade events", () => {
       "cascade.completed",
     ])
   })
+
+  test("does not abort execution when a lifecycle observer defects", async () => {
+    const result = await Effect.runPromise(
+      run(
+        {
+          tasks: [
+            { id: "safe", run: () => Effect.succeed([]) },
+          ],
+        },
+        {
+          onEvent: () => Effect.die(new Error("observer crashed")),
+        },
+      ),
+    )
+
+    expect(result.results.get("safe")?.state).toBe("completed")
+  })
 })
