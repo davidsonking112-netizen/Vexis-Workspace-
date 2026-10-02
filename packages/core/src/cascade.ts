@@ -101,6 +101,7 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
 
     const results = new Map<TaskID, TaskResult>()
     const artifacts = new Map<string, unknown>()
+    const runningTasks = new Set<TaskID>()
     if (options.resume) {
       for (const [id, result] of options.resume.results) {
         if (tasks.has(id) && result.state === "completed") results.set(id, result)
@@ -122,25 +123,30 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
 
     const executeTask = (task: Task) =>
       Effect.gen(function* () {
-        const maxAttempts = Math.max(1, (task.retries ?? 0) + 1)
-        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-          yield* emit({ type: "cascade.task.started", taskID: task.id, attempt })
-          const outcome = yield* Effect.gen(function* () {
-            const capability = task.capability ? capabilities.get(task.capability) : undefined
-            if (capability?.activate) yield* capability.activate
-            return yield* task.run({ taskID: task.id, artifacts: new Map(artifacts), capability, attempt })
-          }).pipe(Effect.matchEffect({
-            onSuccess: (taskArtifacts) => Effect.succeed({ ok: true as const, taskArtifacts }),
-            onFailure: (error) => Effect.succeed({ ok: false as const, error }),
-          }))
-          if (outcome.ok) return { state: "completed" as const, artifacts: outcome.taskArtifacts, attempts: attempt }
-          if (attempt < maxAttempts) {
-            yield* emit({ type: "cascade.task.retrying", taskID: task.id, attempt, error: outcome.error })
-            continue
+        runningTasks.add(task.id)
+        return yield* Effect.gen(function* () {
+          const maxAttempts = Math.max(1, (task.retries ?? 0) + 1)
+          for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            yield* emit({ type: "cascade.task.started", taskID: task.id, attempt })
+            const outcome = yield* Effect.gen(function* () {
+              const capability = task.capability ? capabilities.get(task.capability) : undefined
+              if (capability?.activate) yield* capability.activate
+              return yield* task.run({ taskID: task.id, artifacts: new Map(artifacts), capability, attempt })
+            }).pipe(Effect.matchEffect({
+              onSuccess: (taskArtifacts) => Effect.succeed({ ok: true as const, taskArtifacts }),
+              onFailure: (error) => Effect.succeed({ ok: false as const, error }),
+            }))
+            if (outcome.ok) return { state: "completed" as const, artifacts: outcome.taskArtifacts, attempts: attempt }
+            if (attempt < maxAttempts) {
+              yield* emit({ type: "cascade.task.retrying", taskID: task.id, attempt, error: outcome.error })
+              continue
+            }
+            return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: attempt, error: outcome.error }
           }
-          return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: attempt, error: outcome.error }
-        }
-        return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: maxAttempts, error: new Error("Cascade task exhausted retries") }
+          return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: maxAttempts, error: new Error("Cascade task exhausted retries") }
+        }).pipe(
+          Effect.ensuring(Effect.sync(() => runningTasks.delete(task.id))),
+        )
       })
 
     try {
@@ -191,5 +197,12 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
       return yield* Effect.fail(error instanceof Error ? error : new Error(reason))
     }
   }).pipe(
-    Effect.onInterrupt(() => options.onEvent ? options.onEvent({ type: "cascade.cancelled", reason: "interrupted" }) : Effect.void),
+    Effect.onInterrupt(() =>
+      Effect.gen(function* () {
+        for (const taskID of runningTasks) {
+          yield* emit({ type: "cascade.task.cancelled", taskID, reason: "Cascade interrupted" })
+        }
+        yield* emit({ type: "cascade.cancelled", reason: "interrupted" })
+      }),
+    ),
   )
