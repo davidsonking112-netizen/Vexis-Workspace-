@@ -41,6 +41,7 @@ describe("Cascade", () => {
 
     expect(result.artifacts.get("summary")).toBe("ready")
     expect(result.results.get("synthesize")?.state).toBe("completed")
+    expect(result.concurrency).toBe(2)
     expect(order).toEqual(["research", "inspect", "synthesize"])
   })
 
