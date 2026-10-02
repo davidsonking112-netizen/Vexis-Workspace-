@@ -34,12 +34,23 @@ const layer = Layer.effect(
 
     const memoryPath = (directory: AbsolutePath) => path.join(directory, FILE)
 
-    const read = Effect.fn("ProjectMemory.read")(function* (directory: AbsolutePath) {
+    const readUnlocked = Effect.fn("ProjectMemory.readUnlocked")(function* (directory: AbsolutePath) {
       return normalize((yield* fs.readFileStringSafe(memoryPath(directory))) ?? "")
     })
 
-    const write = Effect.fn("ProjectMemory.write")(function* (input: { directory: AbsolutePath; content: string }) {
+    const writeUnlocked = Effect.fn("ProjectMemory.writeUnlocked")(function* (input: {
+      directory: AbsolutePath
+      content: string
+    }) {
       yield* fs.writeWithDirs(memoryPath(input.directory), normalize(input.content) + "\n")
+    })
+
+    const read = Effect.fn("ProjectMemory.read")(function* (directory: AbsolutePath) {
+      return yield* mutex.withLock(directory)(readUnlocked(directory))
+    })
+
+    const write = Effect.fn("ProjectMemory.write")(function* (input: { directory: AbsolutePath; content: string }) {
+      yield* mutex.withLock(input.directory)(writeUnlocked(input))
     })
 
     const append = Effect.fn("ProjectMemory.append")(function* (input: {
@@ -48,7 +59,7 @@ const layer = Layer.effect(
     }) {
       yield* mutex.withLock(input.directory)(
         Effect.gen(function* () {
-          const existing = yield* read(input.directory)
+          const existing = yield* readUnlocked(input.directory)
           const block = [
             `## ${input.entry.topic.trim()}`,
             "",
@@ -57,7 +68,7 @@ const layer = Layer.effect(
             `_Updated: ${new Date().toISOString()}${input.entry.source ? ` · Source: ${input.entry.source}` : ""}_`,
             "",
           ].join("\n")
-          yield* write({
+          yield* writeUnlocked({
             directory: input.directory,
             content: existing ? existing + "\n" + block : `# Vexis Project Memory\n\n` + block,
           })
