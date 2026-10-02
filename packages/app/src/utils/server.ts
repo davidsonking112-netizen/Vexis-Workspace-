@@ -100,14 +100,15 @@ export function createCascadeApiForServer(input: {
 
   return {
     resume: (sessionID) =>
-      call({
-        path: `/api/cascade/${encodeURIComponent(sessionID)}/resume`,
-        method: "POST",
-      } as never),
+      call<{
+        data: {
+          sessions: Record<string, string>
+          artifacts: Record<string, unknown>
+        }
+      }>(`/api/cascade/${encodeURIComponent(sessionID)}/resume`, { method: "POST" }),
     cancel: (sessionID) =>
-      call({
-        path: `/api/cascade/${encodeURIComponent(sessionID)}/cancel`,
+      call<{ data: { cancelled: boolean } }>(`/api/cascade/${encodeURIComponent(sessionID)}/cancel`, {
         method: "POST",
-      } as never),
+      }),
   }
 }
