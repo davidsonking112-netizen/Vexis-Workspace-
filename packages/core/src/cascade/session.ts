@@ -24,9 +24,18 @@ export type RunInput = {
   readonly resumeSessionID?: string
 }
 
+const safeSerialize = (value: unknown) => {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value)
+  } catch {
+    return String(value)
+  }
+}
+
 const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>, memory: string) => {
   const dependencyContext = [...context.entries()]
-    .map(([key, value]) => `\nArtifact ${key}:\n${typeof value === "string" ? value : JSON.stringify(value)}`)
+    .map(([key, value]) => `\nArtifact ${key}:\n${safeSerialize(value)}`)
     .join("")
 
   return PromptInput.Prompt.make({
@@ -106,7 +115,9 @@ export const run = (
     const global = yield* Global.Service
     const fs = yield* FSUtil.Service
     const memory = yield* ProjectMemory.Service
-    const projectMemory = yield* memory.context(input.location.directory)
+    const projectMemory = yield* memory.context(input.location.directory).pipe(
+      Effect.catchAllCause(() => Effect.succeed("")),
+    )
     const parentSessionID = input.parentSessionID ?? input.resumeSessionID
     const history = input.resumeSessionID
       ? yield* Effect.gen(function* () {
@@ -176,16 +187,30 @@ export const run = (
           ),
         } satisfies Cascade.ResumeState
       : undefined
-    const baseRepo = yield* git.repo.discover(input.location.directory)
-    const baseHead = baseRepo ? yield* git.history.head(baseRepo) : undefined
-    const baseBranch = baseRepo ? yield* git.history.branch(baseRepo) : undefined
+    // Git is an enhancement to Cascade, not a prerequisite. If repository discovery
+    // or metadata inspection fails, continue in the shared workspace instead of
+    // taking the whole mission down.
+    const baseRepo = yield* git.repo.discover(input.location.directory).pipe(
+      Effect.catchAllCause(() => Effect.succeed(undefined)),
+    )
+    const baseHead = baseRepo
+      ? yield* git.history.head(baseRepo).pipe(Effect.catchAllCause(() => Effect.succeed(undefined)))
+      : undefined
+    const baseBranch = baseRepo
+      ? yield* git.history.branch(baseRepo).pipe(Effect.catchAllCause(() => Effect.succeed(undefined)))
+      : undefined
     const baseChanges = baseRepo
       ? yield* git.change.capture({ repository: baseRepo, path: input.location.directory }).pipe(
-          Effect.catch(() => Effect.succeed(Git.ChangeSet.make(""))),
+          Effect.catchAllCause(() => Effect.succeed(Git.ChangeSet.make(""))),
         )
       : Git.ChangeSet.make("")
     const hasBaseChanges = baseChanges.toString().length > 0
-    const concurrency = hasBaseChanges ? 1 : input.concurrency
+    const missionTasks = storedPlan ?? input.plan.tasks
+    // Mutating work is serialized even when the mission itself is otherwise
+    // parallelizable. This prevents two isolated worktrees from applying
+    // overlapping change sets to the same base checkout concurrently.
+    const hasMutatingTasks = missionTasks.some((task) => task.mutatesWorkspace)
+    const concurrency = hasBaseChanges || hasMutatingTasks ? 1 : input.concurrency
 
     const publish = (event: Cascade.Event) =>
       parentSessionID
@@ -331,7 +356,14 @@ export const run = (
 
     const resume = input.resume ?? resumeFromHistory
     const onEvent = (event: Cascade.Event) =>
-      publish(event).pipe(Effect.andThen(input.onEvent ? input.onEvent(event) : Effect.void))
+      publish(event).pipe(
+        Effect.catchAllCause(() => Effect.void),
+        Effect.andThen(
+          input.onEvent
+            ? input.onEvent(event).pipe(Effect.catchAllCause(() => Effect.void))
+            : Effect.void,
+        ),
+      )
     const execution = Cascade.run(plan, {
       concurrency,
       capabilities: CapabilityRegistry.capabilities(),
