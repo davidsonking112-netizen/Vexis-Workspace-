@@ -209,6 +209,8 @@ export function CascadePanel() {
       if (kind === "resume") await sdk().api.cascade.resume({ sessionID })
       else await sdk().api.cascade.cancel({ sessionID })
       await refetch()
+    } catch (error) {
+      console.error("[cascade-panel] action failed", { kind, sessionID, error })
     } finally {
       setBusy()
     }
