@@ -415,17 +415,7 @@ export const run = (
       capabilities: CapabilityRegistry.capabilities(),
       onEvent,
       resume,
-    })
-    const awaitExecution = !parentSessionID
-      ? execution
-      : Effect.gen(function* () {
-          const fiber = yield* Effect.fork(execution)
-          activeRuns.set(parentSessionID!, fiber)
-          return yield* Fiber.join(fiber).pipe(
-            Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID!))),
-          )
-        })
-    const result = yield* awaitExecution.pipe(
+    }).pipe(
       Effect.onInterrupt(() =>
         Effect.forEach(
           [...new Set(runningWorkers.values())],
@@ -434,6 +424,15 @@ export const run = (
         ),
       ),
     )
+    const result = !parentSessionID
+      ? yield* execution
+      : yield* Effect.gen(function* () {
+          const fiber = yield* Effect.fork(execution)
+          activeRuns.set(parentSessionID!, fiber)
+          return yield* Fiber.join(fiber).pipe(
+            Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID!))),
+          )
+        })
     return { ...result, concurrency }
     }),
   )
