@@ -1,4 +1,4 @@
-import { Effect } from "effect"
+import { DateTime, Deferred, Effect } from "effect"
 import path from "path"
 import { PromptInput } from "@vexis/schema/prompt-input"
 import * as Session from "../session"
@@ -10,6 +10,8 @@ import { Cascade, type Plan, type Task, type ProjectResult, type Artifact } from
 import * as CapabilityRegistry from "./capability"
 import { AbsolutePath } from "../schema"
 import { ProjectMemory } from "../project/memory"
+import { EventV2 } from "../event"
+import { SessionEvent } from "../session/event"
 
 export type RunInput = {
   readonly location: Location.Ref
@@ -19,6 +21,7 @@ export type RunInput = {
   readonly concurrency?: number
   readonly onEvent?: (event: Cascade.Event) => Effect.Effect<void, never>
   readonly resume?: Cascade.ResumeState
+  readonly resumeSessionID?: string
 }
 
 const taskPrompt = (task: Task, context: ReadonlyMap<string, unknown>, memory: string) => {
@@ -77,16 +80,89 @@ const resultArtifact = (
   },
 })
 
+const activeRuns = new Map<string, Deferred.Deferred<void>>()
+
+const errorData = (error: unknown) => {
+  if (error instanceof Error) return { name: error.name, message: error.message }
+  if (typeof error === "string") return { message: error }
+  try { return JSON.parse(JSON.stringify(error)) } catch { return { message: String(error) } }
+}
+
+export const cancel = (parentSessionID: string): Effect.Effect<boolean> =>
+  Effect.gen(function* () {
+    const deferred = activeRuns.get(parentSessionID)
+    if (!deferred) return false
+    yield* Deferred.succeed(deferred, undefined)
+    return true
+  })
+
 export const run = (
   input: RunInput,
 ): Effect.Effect<ProjectResult, unknown, Session.Service | Git.Service | Global.Service | FSUtil.Service> =>
   Effect.gen(function* () {
     const sessions = yield* Session.Service
+    const events = yield* EventV2.Service
     const git = yield* Git.Service
     const global = yield* Global.Service
     const fs = yield* FSUtil.Service
     const memory = yield* ProjectMemory.Service
     const projectMemory = yield* memory.context(input.location.directory)
+    const parentSessionID = input.parentSessionID ?? input.resumeSessionID
+    const history = input.resumeSessionID
+      ? yield* sessions.history({ sessionID: Session.ID.make(input.resumeSessionID), after: undefined, limit: 100 }).pipe(
+          Effect.catch(() => Effect.succeed({ events: [], hasMore: false })),
+        )
+      : undefined
+    const cascadeHistory = history?.events.filter((event): event is SessionEvent.DurableEvent =>
+      event.type.startsWith("session.next.cascade."),
+    )
+    const started = cascadeHistory?.toReversed().find((event): event is SessionEvent.Cascade.Started =>
+      event.type === "session.next.cascade.started",
+    )
+    const storedPlan = started?.data.tasks?.map((task) => ({
+      ...task,
+      run: () => Effect.succeed([] as readonly Artifact[]),
+    }))
+    const resumeFromHistory = cascadeHistory
+      ? {
+          results: new Map<string, Cascade.TaskResult>(
+            cascadeHistory.flatMap((event) => {
+              if (event.type === "session.next.cascade.task.completed") {
+                return [[event.data.taskID, {
+                  id: event.data.taskID,
+                  state: "completed" as const,
+                  artifacts: event.data.artifacts,
+                  attempts: event.data.attempts,
+                }]]
+              }
+              if (event.type === "session.next.cascade.task.failed") {
+                return [[event.data.taskID, {
+                  id: event.data.taskID,
+                  state: "failed" as const,
+                  artifacts: [],
+                  attempts: event.data.attempts,
+                  error: event.data.error,
+                }]]
+              }
+              if (event.type === "session.next.cascade.task.cancelled") {
+                return [[event.data.taskID, {
+                  id: event.data.taskID,
+                  state: "cancelled" as const,
+                  artifacts: [],
+                  attempts: 0,
+                  error: event.data.reason,
+                }]]
+              }
+              return []
+            }),
+          ),
+          artifacts: new Map<string, unknown>(
+            cascadeHistory
+              .filter((event): event is SessionEvent.Cascade.TaskCompleted => event.type === "session.next.cascade.task.completed")
+              .flatMap((event) => event.data.artifacts.map((artifact) => [artifact.key, artifact.value] as const)),
+          ),
+        } satisfies Cascade.ResumeState
+      : undefined
     const baseRepo = yield* git.repo.discover(input.location.directory)
     const baseHead = baseRepo ? yield* git.history.head(baseRepo) : undefined
     const baseBranch = baseRepo ? yield* git.history.branch(baseRepo) : undefined
@@ -97,6 +173,56 @@ export const run = (
       : Git.ChangeSet.make("")
     const hasBaseChanges = baseChanges.toString().length > 0
     const concurrency = hasBaseChanges ? 1 : input.concurrency
+
+    const publish = (event: Cascade.Event) =>
+      parentSessionID
+        ? Effect.gen(function* () {
+            const timestamp = yield* DateTime.now
+            const base = { timestamp, sessionID: Session.ID.make(parentSessionID) }
+            switch (event.type) {
+              case "cascade.started":
+                yield* events.publish(SessionEvent.Cascade.Started, {
+                  ...base, taskCount: event.taskCount,
+                  tasks: event.tasks?.map(({ run: _run, ...task }) => task),
+                }, { location: input.location })
+                break
+              case "cascade.resumed":
+                yield* events.publish(SessionEvent.Cascade.Resumed, { ...base, completedCount: event.completedCount }, { location: input.location })
+                break
+              case "cascade.task.started":
+                yield* events.publish(SessionEvent.Cascade.TaskStarted, { ...base, taskID: event.taskID, attempt: event.attempt }, { location: input.location })
+                break
+              case "cascade.task.retrying":
+                yield* events.publish(SessionEvent.Cascade.TaskRetrying, { ...base, taskID: event.taskID, attempt: event.attempt, error: errorData(event.error) }, { location: input.location })
+                break
+              case "cascade.task.artifact":
+                yield* events.publish(SessionEvent.Cascade.TaskArtifact, { ...base, taskID: event.taskID, key: event.key, kind: event.kind }, { location: input.location })
+                break
+              case "cascade.task.completed":
+                yield* events.publish(SessionEvent.Cascade.TaskCompleted, {
+                  ...base, taskID: event.taskID, attempts: event.attempts,
+                  artifacts: event.artifacts.map((artifact) => ({ ...artifact })),
+                }, { location: input.location })
+                break
+              case "cascade.task.failed":
+                yield* events.publish(SessionEvent.Cascade.TaskFailed, { ...base, taskID: event.taskID, error: errorData(event.error), attempts: event.attempts }, { location: input.location })
+                break
+              case "cascade.task.cancelled":
+                yield* events.publish(SessionEvent.Cascade.TaskCancelled, { ...base, taskID: event.taskID, reason: event.reason }, { location: input.location })
+                break
+              case "cascade.cancelled":
+                yield* events.publish(SessionEvent.Cascade.Cancelled, { ...base, reason: event.reason }, { location: input.location })
+                break
+              case "cascade.completed":
+                yield* events.publish(SessionEvent.Cascade.Completed, {
+                  ...base,
+                  taskCount: event.results.size,
+                  completedCount: [...event.results.values()].filter((result) => result.state === "completed").length,
+                }, { location: input.location })
+                break
+            }
+          })
+        : Effect.void
 
     const runTask = (task: Task, context: ReadonlyMap<string, unknown>) =>
       Effect.acquireUseRelease(
@@ -124,7 +250,7 @@ export const run = (
                 directory: execution.workspace,
                 workspaceID: input.location.workspaceID,
               }),
-              parentID: input.parentSessionID ? Session.ID.make(input.parentSessionID) : undefined,
+              parentID: parentSessionID ? Session.ID.make(parentSessionID) : undefined,
               agent: task.agent ?? input.agent,
               metadata: {
                 cascade: {
@@ -184,16 +310,26 @@ export const run = (
 
     const plan: Plan = {
       ...input.plan,
-      tasks: input.plan.tasks.map((task) => ({
+      tasks: (storedPlan ?? input.plan.tasks).map((task) => ({
         ...task,
         run: (context) => runTask(task, context.artifacts),
       })),
     }
 
-    return yield* Cascade.run(plan, {
+    const resume = input.resume ?? resumeFromHistory
+    const deferred = parentSessionID ? yield* Deferred.make<void>() : undefined
+    if (parentSessionID && deferred) activeRuns.set(parentSessionID, deferred)
+    const onEvent = (event: Cascade.Event) =>
+      publish(event).pipe(Effect.andThen(input.onEvent ? input.onEvent(event) : Effect.void))
+    const execution = Cascade.run(plan, {
       concurrency,
       capabilities: CapabilityRegistry.capabilities(),
-      onEvent: input.onEvent,
-      resume: input.resume,
+      onEvent,
+      resume,
     })
+    return yield* (deferred
+      ? Effect.raceFirst(execution, Deferred.await(deferred).pipe(Effect.andThen(Effect.interrupt))).pipe(
+          Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID!))),
+        )
+      : execution)
   })
