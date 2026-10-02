@@ -352,9 +352,9 @@ export const run = (
               .trim()
 
             let changeSet: Git.ChangeSet | undefined
-            if (execution.repository && task.mutatesWorkspace) {
+            if (execution.repository && task.mutatesWorkspace && execution.isolated) {
               const captured = yield* git.change.capture({ repository: execution.repository, path: execution.workspace })
-              if (captured && baseRepo && execution.isolated) {
+              if (captured && baseRepo) {
                 yield* git.change.apply({
                   repository: baseRepo,
                   path: input.location.directory,
