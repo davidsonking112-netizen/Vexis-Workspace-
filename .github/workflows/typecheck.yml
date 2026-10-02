@@ -15,7 +15,9 @@ concurrency:
 
 jobs:
   typecheck:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # The upstream repository has Blacksmith runners; this fork uses
+    # GitHub-hosted runners so validation cannot hang on unavailable labels.
+    runs-on: ${{ github.repository_owner == 'anomalyco' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
