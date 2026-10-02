@@ -101,7 +101,7 @@ export const run = (
     const runTask = (task: Task, context: ReadonlyMap<string, unknown>) =>
       Effect.acquireUseRelease(
         Effect.gen(function* () {
-          const shouldIsolate = Boolean(task.mutatesWorkspace && baseRepo && !baseChanges)
+          const shouldIsolate = Boolean(task.mutatesWorkspace && baseRepo && !hasBaseChanges)
           if (!shouldIsolate) return { workspace: input.location.directory, repository: baseRepo, isolated: false }
 
           const workspace = path.join(
