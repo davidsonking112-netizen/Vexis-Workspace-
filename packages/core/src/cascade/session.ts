@@ -1,4 +1,4 @@
-import { DateTime, Deferred, Effect } from "effect"
+import { DateTime, Effect, Fiber } from "effect"
 import path from "path"
 import { PromptInput } from "@vexis/schema/prompt-input"
 import * as Session from "../session"
@@ -80,7 +80,7 @@ const resultArtifact = (
   },
 })
 
-const activeRuns = new Map<string, Deferred.Deferred<void>>()
+const activeRuns = new Map<string, Fiber.Fiber<unknown, unknown>>()
 
 const errorData = (error: unknown) => {
   if (error instanceof Error) return { name: error.name, message: error.message }
@@ -90,9 +90,9 @@ const errorData = (error: unknown) => {
 
 export const cancel = (parentSessionID: string): Effect.Effect<boolean> =>
   Effect.gen(function* () {
-    const deferred = activeRuns.get(parentSessionID)
-    if (!deferred) return false
-    yield* Deferred.succeed(deferred, undefined)
+    const fiber = activeRuns.get(parentSessionID)
+    if (!fiber) return false
+    yield* Fiber.interrupt(fiber)
     return true
   })
 
@@ -330,8 +330,6 @@ export const run = (
     }
 
     const resume = input.resume ?? resumeFromHistory
-    const deferred = parentSessionID ? yield* Deferred.make<void>() : undefined
-    if (parentSessionID && deferred) activeRuns.set(parentSessionID, deferred)
     const onEvent = (event: Cascade.Event) =>
       publish(event).pipe(Effect.andThen(input.onEvent ? input.onEvent(event) : Effect.void))
     const execution = Cascade.run(plan, {
@@ -340,9 +338,8 @@ export const run = (
       onEvent,
       resume,
     })
-    return yield* (deferred
-      ? Effect.raceFirst(execution, Deferred.await(deferred).pipe(Effect.andThen(Effect.interrupt))).pipe(
-          Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID!))),
-        )
-      : execution)
+    if (!parentSessionID) return yield* execution
+    const fiber = yield* Effect.fork(execution)
+    activeRuns.set(parentSessionID, fiber)
+    return yield* Fiber.join(fiber).pipe(Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID))))
   })
