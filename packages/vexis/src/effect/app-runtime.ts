@@ -25,6 +25,9 @@ import { Session } from "@/session/session"
 import { SessionV2 } from "@vexis/core/session"
 import * as SessionExecutionLocal from "@vexis/core/session/execution/local"
 import { SessionExecution } from "@vexis/core/session/execution"
+import { Git as GitV2 } from "@vexis/core/git"
+import { ProjectV2 } from "@vexis/core/project"
+import { SessionStore } from "@vexis/core/session/store"
 import { Global } from "@vexis/core/global"
 import { ProjectMemory } from "@vexis/core/project/memory"
 import { SessionStatus } from "@/session/status"
@@ -69,6 +72,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Account.node,
     Config.node,
     Git.node,
+    GitV2.node,
     Storage.node,
     Snapshot.node,
     Plugin.node,
@@ -84,6 +88,8 @@ export const AppLayer = AppNodeBuilderV1.build(
     Session.node,
     SessionV2.node,
     ProjectMemory.node,
+    ProjectV2.node,
+    SessionStore.node,
     Global.node,
     SessionProjector.node,
     SessionStatus.node,
