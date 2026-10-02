@@ -159,7 +159,14 @@ export function CascadePanel() {
     const merged = new Map<string, CascadeEvent>()
     for (const event of persisted) merged.set(event.id, event)
     for (const event of liveEvents()) merged.set(event.id, event)
-    return [...merged.values()]
+    return [...merged.values()].toSorted((a, b) => {
+      const aSeq = a.durable?.seq
+      const bSeq = b.durable?.seq
+      if (typeof aSeq === "number" && typeof bSeq === "number") return aSeq - bSeq
+      if (typeof aSeq === "number") return -1
+      if (typeof bSeq === "number") return 1
+      return 0
+    })
   })
   const mission = createMemo(() => {
     const items = events()
