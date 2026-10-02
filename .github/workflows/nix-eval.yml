@@ -16,7 +16,9 @@ permissions:
 
 jobs:
   nix-eval:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    # The upstream repository has Blacksmith runners; this fork uses
+    # GitHub-hosted runners so validation cannot hang on unavailable labels.
+    runs-on: ${{ github.repository_owner == 'anomalyco' && 'blacksmith-4vcpu-ubuntu-2404' || 'ubuntu-24.04' }}
     timeout-minutes: 15
     steps:
       - name: Checkout repository
