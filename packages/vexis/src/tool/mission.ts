@@ -40,6 +40,8 @@ export const MissionTool = Tool.define(
             return `[${item.id}] ${item.state}: ${artifact?.output ?? item.error ?? ""}`
           }).join("\n")
 
+          // Memory is durable context, but it is never allowed to turn a
+          // completed mission into a failed tool call.
           yield* memory.append({
             directory: instance.directory,
             entry: {
@@ -52,7 +54,7 @@ export const MissionTool = Tool.define(
               ].join("\n"),
               source: "vexis-mission",
             },
-          })
+          }).pipe(Effect.catchAllCause(() => Effect.void))
 
           const graph = mission.tasks.map((task) => {
             const dependencies = task.dependsOn?.length ? task.dependsOn.join(", ") : "none"
