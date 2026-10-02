@@ -333,13 +333,19 @@ export const run = (
             })
             runningWorkers.set(task.id, created.id)
             const messages = yield* Effect.gen(function* () {
-              yield* sessions.prompt({ sessionID: created.id, prompt: taskPrompt(task, context, projectMemory) })
-              // prompt() wakes execution; resume() joins the same keyed runner when it is already active.
+              // Do not wake from prompt(): Cascade owns the worker start so resume()
+              // cannot race a worker that has already finished and accidentally start it again.
+              yield* sessions.prompt({
+                sessionID: created.id,
+                prompt: taskPrompt(task, context, projectMemory),
+                resume: false,
+              })
+              runningWorkers.set(task.id, created.id)
               yield* sessions.resume(created.id)
-              return yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
-            }).pipe(
-              Effect.ensuring(Effect.sync(() => runningWorkers.delete(task.id))),
-            )
+              const result = yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
+              runningWorkers.delete(task.id)
+              return result
+            })
             const output = messages
               .flatMap((message) => "parts" in message ? message.parts : [])
               .filter((part) => part.type === "text")
@@ -410,6 +416,14 @@ export const run = (
             : Effect.void,
         ),
       )
+    yield* Effect.addFinalizer(() =>
+      Effect.forEach(
+        [...new Set(runningWorkers.values())],
+        (sessionID) => sessions.interrupt(sessionID),
+        { concurrency: "unbounded", discard: true },
+      ).pipe(Effect.ignore),
+    )
+
     const execution = Cascade.run(plan, {
       concurrency,
       capabilities: CapabilityRegistry.capabilities(),
