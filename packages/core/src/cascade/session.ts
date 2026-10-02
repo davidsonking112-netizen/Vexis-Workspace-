@@ -114,6 +114,7 @@ export const run = (
     Effect.gen(function* () {
     const sessions = yield* Session.Service
     const events = yield* EventV2.Service
+    const runningWorkers = new Map<string, string>()
     const git = yield* Git.Service
     const global = yield* Global.Service
     const fs = yield* FSUtil.Service
@@ -330,10 +331,16 @@ export const run = (
                 },
               },
             })
-            yield* sessions.prompt({ sessionID: created.id, prompt: taskPrompt(task, context, projectMemory) })
-            // prompt() wakes execution; resume() joins the same keyed runner when it is already active.
-            yield* sessions.resume(created.id)
-            const messages = yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
+            runningWorkers.set(task.id, created.id)
+            yield* Effect.gen(function* () {
+              yield* sessions.prompt({ sessionID: created.id, prompt: taskPrompt(task, context, projectMemory) })
+              // prompt() wakes execution; resume() joins the same keyed runner when it is already active.
+              yield* sessions.resume(created.id)
+              const messages = yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
+              return messages
+            }).pipe(
+              Effect.ensuring(Effect.sync(() => runningWorkers.delete(task.id))),
+            )
             const output = messages
               .flatMap((message) => "parts" in message ? message.parts : [])
               .filter((part) => part.type === "text")
@@ -410,13 +417,24 @@ export const run = (
       onEvent,
       resume,
     })
-    if (!parentSessionID) {
-      const result = yield* execution
-      return { ...result, concurrency }
-    }
-    const fiber = yield* Effect.fork(execution)
-    activeRuns.set(parentSessionID, fiber)
-    const result = yield* Fiber.join(fiber).pipe(Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID))))
+    const awaitExecution = !parentSessionID
+      ? execution
+      : Effect.gen(function* () {
+          const fiber = yield* Effect.fork(execution)
+          activeRuns.set(parentSessionID!, fiber)
+          return yield* Fiber.join(fiber).pipe(
+            Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID!))),
+          )
+        })
+    const result = yield* awaitExecution.pipe(
+      Effect.onInterrupt(() =>
+        Effect.forEach(
+          [...new Set(runningWorkers.values())],
+          (sessionID) => sessions.interrupt(sessionID),
+          { concurrency: "unbounded", discard: true },
+        ),
+      ),
+    )
     return { ...result, concurrency }
     }),
   )
