@@ -3,6 +3,7 @@ import path from "path"
 import { FSUtil } from "../fs-util"
 import { AbsolutePath } from "../schema"
 import { makeGlobalNode } from "../effect/app-node"
+import { KeyedMutex } from "../effect/keyed-mutex"
 
 const FILE = ".vexis/memory.md"
 
@@ -30,6 +31,8 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
 
+    const locks = KeyedMutex.makeUnsafe<string>()
+
     const memoryPath = (directory: AbsolutePath) => path.join(directory, FILE)
 
     const read = Effect.fn("ProjectMemory.read")(function* (directory: AbsolutePath) {
@@ -44,19 +47,23 @@ const layer = Layer.effect(
       directory: AbsolutePath
       entry: Omit<Entry, "updatedAt">
     }) {
-      const existing = yield* read(input.directory)
-      const block = [
-        `## ${input.entry.topic.trim()}`,
-        "",
-        input.entry.content.trim(),
-        "",
-        `_Updated: ${new Date().toISOString()}${input.entry.source ? ` · Source: ${input.entry.source}` : ""}_`,
-        "",
-      ].join("\n")
-      yield* write({
-        directory: input.directory,
-        content: existing ? existing + "\n" + block : `# Vexis Project Memory\n\n` + block,
-      })
+      return yield* locks.withLock(memoryPath(input.directory))(
+        Effect.gen(function* () {
+          const existing = yield* read(input.directory)
+          const block = [
+            `## ${input.entry.topic.trim()}`,
+            "",
+            input.entry.content.trim(),
+            "",
+            `_Updated: ${new Date().toISOString()}${input.entry.source ? ` · Source: ${input.entry.source}` : ""}_`,
+            "",
+          ].join("\n")
+          yield* write({
+            directory: input.directory,
+            content: existing ? existing + "\n" + block : `# Vexis Project Memory\n\n` + block,
+          })
+        }),
+      )
     })
 
     const context = Effect.fn("ProjectMemory.context")(function* (directory: AbsolutePath, maxChars = 12000) {

@@ -90,6 +90,42 @@ describe("Cascade recovery", () => {
     expect(result.artifacts.get("seen")).toBe("cached")
   })
 
+  test("does not treat failed tasks as completed recovery checkpoints", async () => {
+    let runs = 0
+    const result = await Effect.runPromise(
+      run(
+        {
+          tasks: [
+            {
+              id: "retry-me",
+              run: () => {
+                runs++
+                return Effect.succeed([artifact("retry-me", "value", "fresh")])
+              },
+            },
+          ],
+        },
+        {
+          resume: {
+            results: new Map([
+              ["retry-me", {
+                id: "retry-me",
+                state: "failed" as const,
+                artifacts: [],
+                attempts: 1,
+                error: new Error("previous failure"),
+              }],
+            ]),
+            artifacts: new Map(),
+          },
+        },
+      ),
+    )
+
+    expect(runs).toBe(1)
+    expect(result.results.get("retry-me")?.state).toBe("completed")
+  })
+
   test("cancels downstream work after an unrecoverable failure", async () => {
     const result = await Effect.runPromise(
       run({

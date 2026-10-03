@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Fiber } from "effect"
 import { run } from "./cascade"
 
 describe("Cascade events", () => {
@@ -31,6 +31,40 @@ describe("Cascade events", () => {
       "cascade.task.completed:build",
       "cascade.completed",
     ])
+  })
+
+  test("emits terminal cancellation for running tasks when interrupted", async () => {
+    const events: string[] = []
+    let resolveStarted!: () => void
+    const started = new Promise<void>((resolve) => {
+      resolveStarted = resolve
+    })
+
+    const fiber = Effect.runFork(
+      run(
+        {
+          tasks: [
+            {
+              id: "blocked",
+              run: () => Effect.never,
+            },
+          ],
+        },
+        {
+          onEvent: (event) =>
+            Effect.sync(() => {
+              events.push(event.type + ("taskID" in event ? ":" + event.taskID : ""))
+              if (event.type === "cascade.task.started") resolveStarted()
+            }),
+        },
+      ),
+    )
+
+    await started
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(events).toContain("cascade.task.started:blocked")
+    expect(events).toContain("cascade.task.cancelled:blocked")
+    expect(events).toContain("cascade.cancelled")
   })
 
   test("does not abort execution when a lifecycle observer defects", async () => {

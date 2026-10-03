@@ -156,6 +156,13 @@ export interface Interface {
       context?: number
       paths?: readonly RelativePath[]
     }) => Effect.Effect<readonly File.Diff[], OperationError>
+    /** Captures a binary-safe patch between two captured Git trees. */
+    readonly patch: (input: {
+      repository: Repository
+      from: TreeID
+      to: TreeID
+      paths?: readonly RelativePath[]
+    }) => Effect.Effect<ChangeSet, OperationError>
     readonly preview: (input: {
       repository: Repository
       current: TreeID
@@ -616,6 +623,18 @@ const layer = Layer.effect(
       )
     })
 
+    const patch = Effect.fn("Git.tree.patch")(function* (input: {
+      repository: Repository
+      from: TreeID
+      to: TreeID
+      paths?: readonly RelativePath[]
+    }) {
+      const args = ["diff", "--binary", "--no-renames", input.from, input.to]
+      if (input.paths?.length) args.push("--", ...input.paths)
+      const result = yield* repositoryOperation("diff", input.repository, args)
+      return ChangeSet.make(result.text)
+    })
+
     const entry = Effect.fnUntraced(function* (repository: Repository, tree: TreeID, file: RelativePath) {
       const text = (yield* repositoryOperation("restore", repository, [
         "ls-tree",
@@ -935,6 +954,7 @@ const layer = Layer.effect(
         write: writeTree,
         files: treeFiles,
         diff: treeDiff,
+        patch,
         preview,
         restore,
         checkout: checkoutTree,

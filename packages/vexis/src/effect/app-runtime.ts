@@ -22,6 +22,14 @@ import { Question } from "@/question"
 import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
 import { Session } from "@/session/session"
+import { SessionV2 } from "@vexis/core/session"
+import * as SessionExecutionLocal from "@vexis/core/session/execution/local"
+import { SessionExecution } from "@vexis/core/session/execution"
+import { Git as GitV2 } from "@vexis/core/git"
+import { ProjectV2 } from "@vexis/core/project"
+import { SessionStore } from "@vexis/core/session/store"
+import { Global } from "@vexis/core/global"
+import { ProjectMemory } from "@vexis/core/project/memory"
 import { SessionStatus } from "@/session/status"
 import { SessionRunState } from "@/session/run-state"
 import { SessionProcessor } from "@/session/processor"
@@ -64,6 +72,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     Account.node,
     Config.node,
     Git.node,
+    GitV2.node,
     Storage.node,
     Snapshot.node,
     Plugin.node,
@@ -77,6 +86,11 @@ export const AppLayer = AppNodeBuilderV1.build(
     Permission.node,
     Todo.node,
     Session.node,
+    SessionV2.node,
+    ProjectMemory.node,
+    ProjectV2.node,
+    SessionStore.node,
+    Global.node,
     SessionProjector.node,
     SessionStatus.node,
     BackgroundJob.node,
@@ -106,6 +120,7 @@ export const AppLayer = AppNodeBuilderV1.build(
     ShareNext.node,
     SessionShare.node,
   ]),
+  [[SessionExecution.node, SessionExecutionLocal.node]],
 ).pipe(Layer.provideMerge(AppNodeBuilderV1.build(Ripgrep.node)), Layer.provideMerge(Observability.layer))
 
 const rt = ManagedRuntime.make(AppLayer, { memoMap })

@@ -8,10 +8,11 @@ import { FSUtil } from "../fs-util"
 import { Git } from "../git"
 import { Cascade, type Plan, type Task, type ProjectResult, type Artifact } from "../cascade"
 import * as CapabilityRegistry from "./capability"
-import { AbsolutePath } from "../schema"
+import { AbsolutePath, RelativePath } from "../schema"
 import { ProjectMemory } from "../project/memory"
 import { EventV2 } from "../event"
 import { SessionEvent } from "../session/event"
+import { KeyedMutex } from "../effect/keyed-mutex"
 
 export type RunInput = {
   readonly location: Location.Ref
@@ -90,6 +91,7 @@ const resultArtifact = (
 })
 
 const activeRuns = new Map<string, Fiber.Fiber<unknown, unknown>>()
+const runLocks = KeyedMutex.makeUnsafe<string>()
 
 const errorData = (error: unknown) => {
   if (error instanceof Error) return { name: error.name, message: error.message }
@@ -107,10 +109,12 @@ export const cancel = (parentSessionID: string): Effect.Effect<boolean> =>
 
 export const run = (
   input: RunInput,
-): Effect.Effect<ProjectResult, unknown, Session.Service | Git.Service | Global.Service | FSUtil.Service> =>
-  Effect.gen(function* () {
+): Effect.Effect<ProjectResult & { readonly concurrency: number }, unknown, Session.Service | Git.Service | Global.Service | FSUtil.Service> =>
+  runLocks.withLock(input.parentSessionID ?? input.resumeSessionID ?? input.location.directory)(
+    Effect.gen(function* () {
     const sessions = yield* Session.Service
     const events = yield* EventV2.Service
+    const runningWorkers = new Map<string, string>()
     const git = yield* Git.Service
     const global = yield* Global.Service
     const fs = yield* FSUtil.Service
@@ -124,14 +128,14 @@ export const run = (
           const sessionID = Session.ID.make(input.resumeSessionID!)
           const events: SessionEvent.DurableEvent[] = []
           let after: number | undefined
-          for (let page = 0; page < 100; page++) {
-            const next = yield* sessions.history({ sessionID, after, limit: 100 }).pipe(
-              Effect.catch(() => Effect.succeed({ events: [] as SessionEvent.DurableEvent[], hasMore: false })),
-            )
+          while (true) {
+            const next = yield* sessions.history({ sessionID, after, limit: 100 })
             events.push(...next.events)
             if (!next.hasMore) break
             const last = next.events.at(-1)
-            if (!last?.durable) break
+            if (!last?.durable || last.durable.seq <= (after ?? -1)) {
+              return yield* Effect.fail(new Error("Cascade session history pagination did not advance"))
+            }
             after = last.durable.seq
           }
           return events
@@ -149,35 +153,17 @@ export const run = (
     }))
     const resumeFromHistory = cascadeHistory
       ? {
+          // Recovery is checkpoint-based: only durable completion is safe to skip.
+          // Failed/cancelled tasks must remain runnable so an explicit resume can retry them.
           results: new Map<string, Cascade.TaskResult>(
             cascadeHistory.flatMap((event) => {
-              if (event.type === "session.next.cascade.task.completed") {
-                return [[event.data.taskID, {
-                  id: event.data.taskID,
-                  state: "completed" as const,
-                  artifacts: event.data.artifacts,
-                  attempts: event.data.attempts,
-                }]]
-              }
-              if (event.type === "session.next.cascade.task.failed") {
-                return [[event.data.taskID, {
-                  id: event.data.taskID,
-                  state: "failed" as const,
-                  artifacts: [],
-                  attempts: event.data.attempts,
-                  error: event.data.error,
-                }]]
-              }
-              if (event.type === "session.next.cascade.task.cancelled") {
-                return [[event.data.taskID, {
-                  id: event.data.taskID,
-                  state: "cancelled" as const,
-                  artifacts: [],
-                  attempts: 0,
-                  error: event.data.reason,
-                }]]
-              }
-              return []
+              if (event.type !== "session.next.cascade.task.completed") return []
+              return [[event.data.taskID, {
+                id: event.data.taskID,
+                state: "completed" as const,
+                artifacts: event.data.artifacts,
+                attempts: event.data.attempts,
+              }]]
             }),
           ),
           artifacts: new Map<string, unknown>(
@@ -207,10 +193,11 @@ export const run = (
     const hasBaseChanges = baseChanges.toString().length > 0
     const missionTasks = storedPlan ?? input.plan.tasks
     // Mutating work is serialized even when the mission itself is otherwise
-    // parallelizable. This prevents two isolated worktrees from applying
-    // overlapping change sets to the same base checkout concurrently.
+    // parallelizable. This prevents isolated worktrees from applying overlapping
+    // change sets to the same base checkout concurrently.
     const hasMutatingTasks = missionTasks.some((task) => task.mutatesWorkspace)
-    const concurrency = hasBaseChanges || hasMutatingTasks ? 1 : input.concurrency
+    const requestedConcurrency = input.concurrency ?? 4
+    const concurrency = hasBaseChanges || hasMutatingTasks ? 1 : Math.max(1, Math.floor(requestedConcurrency))
 
     const publish = (event: Cascade.Event) =>
       parentSessionID
@@ -279,7 +266,26 @@ export const run = (
             repository: baseRepo!,
             directory: AbsolutePath.make(workspace),
           })
-          return { workspace, repository, isolated: true }
+
+          // Every isolated worker starts from the current base workspace, not just HEAD.
+          // This carries forward successful mutations from earlier serialized tasks without
+          // sharing the live checkout with the agent.
+          const inherited = yield* git.change.capture({
+            repository: baseRepo!,
+            path: input.location.directory,
+          })
+          if (inherited.length > 0) {
+            yield* git.change.apply({
+              repository,
+              path: AbsolutePath.make(workspace),
+              changes: inherited,
+            })
+          }
+          const baselineTree = yield* git.tree.capture({
+            repository,
+            scopes: [RelativePath.make(".")],
+          })
+          return { workspace, repository, isolated: true, baselineTree }
         }),
         (execution) =>
           Effect.gen(function* () {
@@ -307,9 +313,21 @@ export const run = (
                 },
               },
             })
-            yield* sessions.prompt({ sessionID: created.id, prompt: taskPrompt(task, context, projectMemory) })
-            yield* sessions.wait(created.id)
-            const messages = yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
+            runningWorkers.set(task.id, created.id)
+            const messages = yield* Effect.gen(function* () {
+              // Do not wake from prompt(): Cascade owns the worker start so resume()
+              // cannot race a worker that has already finished and accidentally start it again.
+              yield* sessions.prompt({
+                sessionID: created.id,
+                prompt: taskPrompt(task, context, projectMemory),
+                resume: false,
+              })
+              runningWorkers.set(task.id, created.id)
+              yield* sessions.resume(created.id)
+              const result = yield* sessions.messages({ sessionID: created.id, limit: 20, order: "desc" })
+              runningWorkers.delete(task.id)
+              return result
+            })
             const output = messages
               .flatMap((message) => "parts" in message ? message.parts : [])
               .filter((part) => part.type === "text")
@@ -319,15 +337,31 @@ export const run = (
 
             let changeSet: Git.ChangeSet | undefined
             if (execution.repository && task.mutatesWorkspace) {
-              const captured = yield* git.change.capture({ repository: execution.repository, path: execution.workspace })
-              if (captured && baseRepo && execution.isolated) {
-                yield* git.change.apply({
-                  repository: baseRepo,
-                  path: input.location.directory,
-                  changes: captured,
+              if (execution.isolated && execution.baselineTree) {
+                const finalTree = yield* git.tree.capture({
+                  repository: execution.repository,
+                  scopes: [RelativePath.make(".")],
                 })
+                const delta = yield* git.tree.patch({
+                  repository: execution.repository,
+                  from: execution.baselineTree,
+                  to: finalTree,
+                })
+                if (delta.length > 0) {
+                  yield* git.change.apply({
+                    repository: baseRepo!,
+                    path: input.location.directory,
+                    changes: delta,
+                  })
+                  changeSet = delta
+                }
+              } else {
+                const captured = yield* git.change.capture({
+                  repository: execution.repository,
+                  path: execution.workspace,
+                })
+                if (captured.length > 0) changeSet = captured
               }
-              changeSet = captured || undefined
             }
 
             return [resultArtifact(task, {
@@ -364,14 +398,37 @@ export const run = (
             : Effect.void,
         ),
       )
+    yield* Effect.addFinalizer(() =>
+      Effect.forEach(
+        [...new Set(runningWorkers.values())],
+        (sessionID) => sessions.interrupt(sessionID),
+        { concurrency: "unbounded", discard: true },
+      ).pipe(Effect.ignore),
+    )
+
     const execution = Cascade.run(plan, {
       concurrency,
       capabilities: CapabilityRegistry.capabilities(),
       onEvent,
       resume,
-    })
-    if (!parentSessionID) return yield* execution
-    const fiber = yield* Effect.fork(execution)
-    activeRuns.set(parentSessionID, fiber)
-    return yield* Fiber.join(fiber).pipe(Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID))))
-  })
+    }).pipe(
+      Effect.onInterrupt(() =>
+        Effect.forEach(
+          [...new Set(runningWorkers.values())],
+          (sessionID) => sessions.interrupt(sessionID),
+          { concurrency: "unbounded", discard: true },
+        ),
+      ),
+    )
+    const result = !parentSessionID
+      ? yield* execution
+      : yield* Effect.gen(function* () {
+          const fiber = yield* Effect.fork(execution)
+          activeRuns.set(parentSessionID!, fiber)
+          return yield* Fiber.join(fiber).pipe(
+            Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID!))),
+          )
+        })
+    return { ...result, concurrency }
+    }),
+  )

@@ -14,7 +14,7 @@ const Task = Schema.Struct({
 
 export const Parameters = Schema.Struct({
   tasks: Schema.Array(Task),
-  concurrency: Schema.optional(Schema.Number),
+  concurrency: Schema.optional(Schema.Int),
   synthesis_prompt: Schema.optional(Schema.String),
   synthesis_agent: Schema.optional(Schema.String),
 })
@@ -30,6 +30,10 @@ export const CascadeTool = Tool.define(
       parameters: Parameters,
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         Effect.gen(function* () {
+          if (params.concurrency !== undefined && params.concurrency < 1) {
+            return yield* Effect.fail(new Error("Cascade concurrency must be a positive integer"))
+          }
+
           const tasks = params.tasks.map((task) => ({
             id: task.id,
             title: task.title,
@@ -60,12 +64,20 @@ export const CascadeTool = Tool.define(
             concurrency: params.concurrency,
           })
 
+          const escapeXml = (value: unknown) =>
+            String(value ?? "")
+              .replaceAll("&", "&amp;")
+              .replaceAll("<", "&lt;")
+              .replaceAll(">", "&gt;")
+              .replaceAll('"', "&quot;")
+              .replaceAll("'", "&apos;")
+
           const summary = [...result.results.values()]
             .map((item) => {
               const artifact = item.artifacts[0]?.value as { sessionID?: string; output?: string } | undefined
               return [
-                `<task id="${item.id}" state="${item.state}"${artifact?.sessionID ? ` session_id="${artifact.sessionID}"` : ""}>`,
-                artifact?.output ?? (item.error ? String(item.error) : ""),
+                `<task id="${escapeXml(item.id)}" state="${escapeXml(item.state)}"${artifact?.sessionID ? ` session_id="${escapeXml(artifact.sessionID)}"` : ""}>`,
+                escapeXml(artifact?.output ?? (item.error ? String(item.error) : "")),
                 "</task>",
               ].join("\n")
             })

@@ -15,6 +15,11 @@ type CascadeMetadata = {
 type CascadeEvent = {
   id: string
   type: string
+  durable?: {
+    seq?: number
+    aggregateID?: string
+    version?: number
+  }
   data: {
     timestamp?: unknown
     sessionID: string
@@ -104,12 +109,35 @@ export function CascadePanel() {
     return { root, tasks }
   })
 
+  let liveSessionID: string | undefined
   const [history, { refetch }] = createResource(
     () => (open() ? graph()?.root.id : undefined),
     async (sessionID) => {
       if (!sessionID) return [] as CascadeEvent[]
-      const result = await sdk().api.session.history({ sessionID, query: { limit: 100 } })
-      return (result.data as unknown as CascadeEvent[]).filter((event) => event.type.startsWith("session.next.cascade."))
+      if (liveSessionID !== sessionID) {
+        liveSessionID = sessionID
+        setLiveEvents([])
+      }
+      const events: CascadeEvent[] = []
+      let after: number | undefined
+      while (true) {
+        const page = await sdk().api.session.history({
+          sessionID,
+          query: after === undefined ? { limit: 100 } : { limit: 100, after },
+        })
+        events.push(
+          ...(page.data as unknown as CascadeEvent[]).filter((event) =>
+            event.type.startsWith("session.next.cascade."),
+          ),
+        )
+        if (!page.hasMore) return events
+        const raw = page.data as unknown as Array<CascadeEvent & { durable?: { seq?: number } }>
+        const next = raw.at(-1)?.durable?.seq
+        if (typeof next !== "number" || next <= (after ?? -1)) {
+          throw new Error("Cascade history pagination did not advance")
+        }
+        after = next
+      }
     },
   )
 
@@ -131,7 +159,14 @@ export function CascadePanel() {
     const merged = new Map<string, CascadeEvent>()
     for (const event of persisted) merged.set(event.id, event)
     for (const event of liveEvents()) merged.set(event.id, event)
-    return [...merged.values()]
+    return [...merged.values()].toSorted((a, b) => {
+      const aSeq = a.durable?.seq
+      const bSeq = b.durable?.seq
+      if (typeof aSeq === "number" && typeof bSeq === "number") return aSeq - bSeq
+      if (typeof aSeq === "number") return -1
+      if (typeof bSeq === "number") return 1
+      return 0
+    })
   })
   const mission = createMemo(() => {
     const items = events()
@@ -185,6 +220,8 @@ export function CascadePanel() {
       if (kind === "resume") await sdk().api.cascade.resume({ sessionID })
       else await sdk().api.cascade.cancel({ sessionID })
       await refetch()
+    } catch (error) {
+      console.error("[cascade-panel] action failed", { kind, sessionID, error })
     } finally {
       setBusy()
     }
