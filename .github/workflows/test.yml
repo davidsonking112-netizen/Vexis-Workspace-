@@ -11,7 +11,9 @@ concurrency:
   # Serialize runs for the same branch/PR. Do not use run_id for dev:
   # run_id is unique per run and would defeat the concurrency group.
   group: ${{ case(github.ref == 'refs/heads/dev', format('{0}-dev', github.workflow), format('{0}-{1}', github.workflow, github.event.pull_request.number || github.ref)) }}
-  cancel-in-progress: false
+  # Keep every dev push validated in order, but cancel superseded PR runs
+  # so stale revisions cannot block verification of the current head.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -29,9 +31,11 @@ jobs:
         settings:
           - name: linux
             host: blacksmith-4vcpu-ubuntu-2404
+            fork_host: ubuntu-24.04
           - name: windows
             host: blacksmith-4vcpu-windows-2025
-    runs-on: ${{ matrix.settings.host }}
+            fork_host: windows-2025
+    runs-on: ${{ github.repository_owner == 'anomalyco' && matrix.settings.host || matrix.settings.fork_host }}
     defaults:
       run:
         shell: bash
@@ -89,7 +93,7 @@ jobs:
             host: blacksmith-4vcpu-ubuntu-2404
           - name: windows
             host: blacksmith-4vcpu-windows-2025
-    runs-on: ${{ matrix.settings.host }}
+    runs-on: ${{ github.repository_owner == 'anomalyco' && matrix.settings.host || matrix.settings.fork_host }}
     env:
       PLAYWRIGHT_BROWSERS_PATH: ${{ github.workspace }}/.playwright-browsers
     defaults:

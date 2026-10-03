@@ -23,6 +23,9 @@ import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
 import { Session } from "@/session/session"
 import { SessionStatus } from "@/session/status"
+import { ProjectMemory } from "@vexis/core/project/memory"
+import { SessionV2 } from "@vexis/core/session"
+import { V2SessionRunner } from "@/session/v2-runner"
 import { SessionRunState } from "@/session/run-state"
 import { SessionProcessor } from "@/session/processor"
 import { SessionCompaction } from "@/session/compaction"
@@ -77,8 +80,11 @@ export const AppLayer = AppNodeBuilderV1.build(
     Permission.node,
     Todo.node,
     Session.node,
+    SessionV2.node,
     SessionProjector.node,
     SessionStatus.node,
+    ProjectMemory.node,
+    V2SessionRunner.node,
     BackgroundJob.node,
     RuntimeFlags.node,
     EventV2Bridge.node,

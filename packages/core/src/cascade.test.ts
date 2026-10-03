@@ -41,6 +41,7 @@ describe("Cascade", () => {
 
     expect(result.artifacts.get("summary")).toBe("ready")
     expect(result.results.get("synthesize")?.state).toBe("completed")
+    expect(result.concurrency).toBe(2)
     expect(order).toEqual(["research", "inspect", "synthesize"])
   })
 
@@ -96,4 +97,26 @@ describe("Cascade", () => {
       ),
     ).rejects.toThrow("dependency cycle")
   })
+
+  it("normalizes invalid scheduler concurrency safely", async () => {
+    const cases = [Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, 2.9]
+    for (const concurrency of cases) {
+      const result = await Effect.runPromise(
+        Cascade.run(
+          { tasks: [{ id: "task", run: () => Effect.succeed([]) }] },
+          { concurrency },
+        ),
+      )
+      expect(Number.isInteger(result.concurrency)).toBe(true)
+      expect(result.concurrency).toBeGreaterThanOrEqual(1)
+    }
+    const fractional = await Effect.runPromise(
+      Cascade.run(
+        { tasks: [{ id: "task", run: () => Effect.succeed([]) }] },
+        { concurrency: 2.9 },
+      ),
+    )
+    expect(fractional.concurrency).toBe(2)
+  })
+
 })

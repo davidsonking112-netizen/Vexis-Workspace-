@@ -42,6 +42,8 @@ export type TaskResult = {
 export type ProjectResult = {
   readonly results: ReadonlyMap<TaskID, TaskResult>
   readonly artifacts: ReadonlyMap<string, unknown>
+  /** Effective scheduler concurrency after orchestration safety limits. */
+  readonly concurrency?: number
 }
 export type ResumeState = ProjectResult
 export type Plan = { readonly tasks: readonly Task[]; readonly capabilities?: readonly Capability[] }
@@ -67,7 +69,8 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 
 export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectResult, Error> =>
   Effect.gen(function* () {
-    const concurrency = Math.max(1, options.concurrency ?? 4)
+    const requestedConcurrency = options.concurrency ?? 4
+    const concurrency = Number.isFinite(requestedConcurrency) ? Math.max(1, Math.floor(requestedConcurrency)) : 4
     const capabilityList = [...(options.capabilities ?? []), ...(plan.capabilities ?? [])]
     const capabilities = new Map(capabilityList.map((capability) => [capability.id, capability]))
     const tasks = new Map<TaskID, Task>()
@@ -141,7 +144,13 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
           return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: attempt, error: outcome.error }
         }
         return { state: "failed" as const, artifacts: [] as readonly Artifact[], attempts: maxAttempts, error: new Error("Cascade task exhausted retries") }
-      })
+      }).pipe(
+        Effect.onInterrupt(() => emit({
+          type: "cascade.task.cancelled",
+          taskID: task.id,
+          reason: "interrupted",
+        })),
+      )
 
     try {
       while (results.size < tasks.size) {
@@ -184,12 +193,16 @@ export const run = (plan: Plan, options: Options = {}): Effect.Effect<ProjectRes
         }
       }
       yield* emit({ type: "cascade.completed", results })
-      return { results, artifacts }
+      return { results, artifacts, concurrency }
     } catch (error) {
       const reason = errorMessage(error)
       yield* emit({ type: "cascade.cancelled", reason })
       return yield* Effect.fail(error instanceof Error ? error : new Error(reason))
     }
   }).pipe(
-    Effect.onInterrupt(() => options.onEvent ? options.onEvent({ type: "cascade.cancelled", reason: "interrupted" }) : Effect.void),
+    Effect.onInterrupt(() =>
+      (options.onEvent ? options.onEvent({ type: "cascade.cancelled", reason: "interrupted" }) : Effect.void).pipe(
+        Effect.catchAllCause(() => Effect.void),
+      ),
+    ),
   )

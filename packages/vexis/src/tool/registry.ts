@@ -55,6 +55,7 @@ import { ProviderV2 } from "@vexis/core/provider"
 import { ModelV2 } from "@vexis/core/model"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@vexis/core/v1/permission"
+import { ProjectMemory } from "@vexis/core/project/memory"
 import { McpCatalog } from "@/mcp/catalog"
 
 export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
@@ -461,6 +462,7 @@ export const node = LayerNode.make({
     RuntimeFlags.node,
     MCP.node,
     Database.node,
+    ProjectMemory.node,
     Ripgrep.node,
   ],
 })

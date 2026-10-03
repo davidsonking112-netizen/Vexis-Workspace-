@@ -1,4 +1,4 @@
-import { DateTime, Effect, Fiber } from "effect"
+import { DateTime, Deferred, Effect, Fiber } from "effect"
 import path from "path"
 import { PromptInput } from "@vexis/schema/prompt-input"
 import * as Session from "../session"
@@ -12,6 +12,7 @@ import { AbsolutePath } from "../schema"
 import { ProjectMemory } from "../project/memory"
 import { EventV2 } from "../event"
 import { SessionEvent } from "../session/event"
+import { KeyedMutex } from "../effect/keyed-mutex"
 
 export type RunInput = {
   readonly location: Location.Ref
@@ -89,7 +90,8 @@ const resultArtifact = (
   },
 })
 
-const activeRuns = new Map<string, Fiber.Fiber<unknown, unknown>>()
+const activeRuns = new Map<string, Fiber.Fiber<ProjectResult, unknown>>()
+const runMutex = KeyedMutex.makeUnsafe<string>()
 
 const errorData = (error: unknown) => {
   if (error instanceof Error) return { name: error.name, message: error.message }
@@ -98,12 +100,14 @@ const errorData = (error: unknown) => {
 }
 
 export const cancel = (parentSessionID: string): Effect.Effect<boolean> =>
-  Effect.gen(function* () {
-    const fiber = activeRuns.get(parentSessionID)
-    if (!fiber) return false
-    yield* Fiber.interrupt(fiber)
-    return true
-  })
+  runMutex.withLock(parentSessionID)(
+    Effect.gen(function* () {
+      const fiber = activeRuns.get(parentSessionID)
+      if (!fiber) return false
+      yield* Fiber.interrupt(fiber)
+      return true
+    }),
+  )
 
 export const run = (
   input: RunInput,
@@ -124,14 +128,17 @@ export const run = (
           const sessionID = Session.ID.make(input.resumeSessionID!)
           const events: SessionEvent.DurableEvent[] = []
           let after: number | undefined
-          for (let page = 0; page < 100; page++) {
-            const next = yield* sessions.history({ sessionID, after, limit: 100 }).pipe(
-              Effect.catch(() => Effect.succeed({ events: [] as SessionEvent.DurableEvent[], hasMore: false })),
-            )
+          while (true) {
+            const next = yield* sessions.history({ sessionID, after, limit: 100 })
             events.push(...next.events)
             if (!next.hasMore) break
             const last = next.events.at(-1)
-            if (!last?.durable) break
+            if (!last?.durable) {
+              return yield* new Error("Cascade history pagination stopped without a durable sequence")
+            }
+            if (after !== undefined && last.durable.seq <= after) {
+              return yield* new Error("Cascade history pagination did not advance")
+            }
             after = last.durable.seq
           }
           return events
@@ -212,6 +219,28 @@ export const run = (
     const hasMutatingTasks = missionTasks.some((task) => task.mutatesWorkspace)
     const concurrency = hasBaseChanges || hasMutatingTasks ? 1 : input.concurrency
 
+    // A linked mutating task must observe changes produced by mutating ancestors.
+    // Worktrees are created from HEAD, so isolating such a task would silently
+    // discard the upstream working-tree state. Keep those dependent mutations in
+    // the shared checkout; independent mutations can still use isolated worktrees
+    // and will apply cleanly against the base checkout when they do not overlap.
+    const missionTaskMap = new Map(missionTasks.map((task) => [task.id, task]))
+    const mutatingTaskIDs = new Set(missionTasks.filter((task) => task.mutatesWorkspace).map((task) => task.id))
+    const mutationDependencyCache = new Map<string, boolean>()
+    const hasMutatingDependency = (taskID: string, visiting = new Set<string>()): boolean => {
+      const cached = mutationDependencyCache.get(taskID)
+      if (cached !== undefined) return cached
+      if (visiting.has(taskID)) return false
+      visiting.add(taskID)
+      const task = missionTaskMap.get(taskID)
+      const result = task?.dependsOn?.some((dependency) =>
+        mutatingTaskIDs.has(dependency) || hasMutatingDependency(dependency, new Set(visiting)),
+      ) ?? false
+      visiting.delete(taskID)
+      mutationDependencyCache.set(taskID, result)
+      return result
+    }
+
     const publish = (event: Cascade.Event) =>
       parentSessionID
         ? Effect.gen(function* () {
@@ -265,7 +294,12 @@ export const run = (
     const runTask = (task: Task, context: ReadonlyMap<string, unknown>) =>
       Effect.acquireUseRelease(
         Effect.gen(function* () {
-          const shouldIsolate = Boolean(task.mutatesWorkspace && baseRepo && !hasBaseChanges)
+          const shouldIsolate = Boolean(
+            task.mutatesWorkspace &&
+              baseRepo &&
+              !hasBaseChanges &&
+              !hasMutatingDependency(task.id),
+          )
           if (!shouldIsolate) return { workspace: input.location.directory, repository: baseRepo, isolated: false }
 
           const workspace = path.join(
@@ -318,9 +352,9 @@ export const run = (
               .trim()
 
             let changeSet: Git.ChangeSet | undefined
-            if (execution.repository && task.mutatesWorkspace) {
+            if (execution.repository && task.mutatesWorkspace && execution.isolated) {
               const captured = yield* git.change.capture({ repository: execution.repository, path: execution.workspace })
-              if (captured && baseRepo && execution.isolated) {
+              if (captured && baseRepo) {
                 yield* git.change.apply({
                   repository: baseRepo,
                   path: input.location.directory,
@@ -371,7 +405,26 @@ export const run = (
       resume,
     })
     if (!parentSessionID) return yield* execution
-    const fiber = yield* Effect.fork(execution)
-    activeRuns.set(parentSessionID, fiber)
-    return yield* Fiber.join(fiber).pipe(Effect.ensuring(Effect.sync(() => activeRuns.delete(parentSessionID))))
+
+    const fiber = yield* runMutex.withLock(parentSessionID)(
+      Effect.gen(function* () {
+        const existing = activeRuns.get(parentSessionID)
+        if (existing) return existing
+        const gate = yield* Deferred.make<void>()
+        let created!: Fiber.Fiber<ProjectResult, unknown>
+        const started = Deferred.await(gate).pipe(
+          Effect.andThen(execution),
+          Effect.ensuring(
+            Effect.sync(() => {
+              if (activeRuns.get(parentSessionID) === created) activeRuns.delete(parentSessionID)
+            }),
+          ),
+        )
+        created = yield* Effect.fork(started)
+        activeRuns.set(parentSessionID, created)
+        yield* Deferred.succeed(gate, undefined)
+        return created
+      }),
+    )
+    return yield* Fiber.join(fiber)
   })
